@@ -72,8 +72,9 @@ The app checks `GET /api/v2/app/latest` on startup and offers to download a newe
 when the published `version_code` is greater than the installed one.
 
 `.github/workflows/android-release.yml` runs on a self-hosted Linux x64 runner. Pushes
-and manual runs build the debug APK as a CI check. A manual run publishes a signed
-release only when its `publish` input is enabled; the input defaults to `false`.
+and non-publishing manual runs build the debug APK as a CI check. A manual run builds
+and publishes a signed release instead when its `publish` input is enabled; the input
+defaults to `false`.
 The runner, Smart Watering backend and Prometheus may live on the same machine. When
 enabled, the runner publishes directly to a host directory mounted read-only by
 `public-api`, so publishing does not restart the backend and does not affect Prometheus.

@@ -36,6 +36,7 @@ jobs:
           fetch-depth: 0
 
       - name: Build debug APK
+        if: env.PUBLISH_RELEASE != 'true'
         shell: bash
         run: |
           docker buildx build \

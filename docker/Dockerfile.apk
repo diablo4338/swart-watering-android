@@ -6,9 +6,9 @@ COPY . ./
 
 FROM source AS verify
 
-RUN --mount=type=cache,id=smart-watering-android,target=/root/.gradle \
+RUN --mount=type=cache,id=smart-watering-android,target=/root/.gradle,sharing=locked \
     chmod +x gradlew && \
-    ./gradlew --no-daemon :app:assembleDebug
+    ./gradlew --no-daemon --no-configuration-cache --console=plain --info --stacktrace :app:assembleDebug
 
 FROM source AS build
 
@@ -22,7 +22,7 @@ RUN --mount=type=secret,id=release_keystore \
     --mount=type=secret,id=signing_store_password \
     --mount=type=secret,id=signing_key_password \
     --mount=type=secret,id=google_web_client_id \
-    --mount=type=cache,id=smart-watering-android,target=/root/.gradle \
+    --mount=type=cache,id=smart-watering-android,target=/root/.gradle,sharing=locked \
     set -eu; \
     case "$VERSION_NAME" in *[!0-9A-Za-z.+-]*) exit 2;; esac; \
     case "$VERSION_CODE" in ''|*[!0-9]*) exit 2;; esac; \
@@ -35,7 +35,7 @@ RUN --mount=type=secret,id=release_keystore \
     export SMART_WATERING_RELEASE_KEY_ALIAS=release; \
     export SMART_WATERING_RELEASE_KEY_PASSWORD="$(cat /run/secrets/signing_key_password)"; \
     chmod +x gradlew; \
-    ./gradlew --no-daemon :app:assembleRelease; \
+    ./gradlew --no-daemon --no-configuration-cache --console=plain --info --stacktrace :app:assembleRelease; \
     apk_source="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"; \
     test -n "$apk_source"; \
     release_dir="/output/releases/$VERSION_CODE"; \
