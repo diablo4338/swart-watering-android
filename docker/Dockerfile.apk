@@ -1,8 +1,16 @@
 # syntax=docker/dockerfile:1.7
-FROM ghcr.io/cirruslabs/android-sdk:36 AS build
+FROM ghcr.io/cirruslabs/android-sdk:36 AS source
 
 WORKDIR /workspace
 COPY . ./
+
+FROM source AS verify
+
+RUN --mount=type=cache,id=smart-watering-android,target=/root/.gradle \
+    chmod +x gradlew && \
+    ./gradlew --no-daemon :app:assembleDebug
+
+FROM source AS build
 
 ARG VERSION_NAME
 ARG VERSION_CODE

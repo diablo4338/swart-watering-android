@@ -71,10 +71,12 @@ Build commands:
 The app checks `GET /api/v2/app/latest` on startup and offers to download a newer APK
 when the published `version_code` is greater than the installed one.
 
-`.github/workflows/android-release.yml` runs on a self-hosted Linux x64 runner. The
-runner, Smart Watering backend and Prometheus may live on the same machine. The runner
-publishes directly to a host directory mounted read-only by `public-api`, so publishing
-does not restart the backend and does not affect Prometheus.
+`.github/workflows/android-release.yml` runs on a self-hosted Linux x64 runner. Pushes
+and manual runs build the debug APK as a CI check. A manual run publishes a signed
+release only when its `publish` input is enabled; the input defaults to `false`.
+The runner, Smart Watering backend and Prometheus may live on the same machine. When
+enabled, the runner publishes directly to a host directory mounted read-only by
+`public-api`, so publishing does not restart the backend and does not affect Prometheus.
 
 Configure the GitHub environment named `dev` with these variables:
 
@@ -111,4 +113,6 @@ git push origin app-v1.0.0
 The tag defines the visible version base. Later successful builds from `master`
 increment the patch stored in `latest.json`; a newer tag changes the base. Android
 `versionCode` is `1000 + github.run_number` and is checked for monotonic growth.
-Publishing jobs are serialized and update `latest.json` atomically.
+Publishing jobs are serialized and update `latest.json` atomically. Pushes, including
+tag pushes, never publish by themselves; start the workflow manually with `publish`
+enabled to publish the version resolved from the checked-out commit.
