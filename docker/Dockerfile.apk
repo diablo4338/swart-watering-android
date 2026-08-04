@@ -1,13 +1,14 @@
-FROM ghcr.io/cirruslabs/android-sdk:36 AS source
+# syntax=docker/dockerfile:1.7
+FROM ghcr.io/cirruslabs/android-sdk:35 AS source
 
 WORKDIR /workspace
 COPY . ./
 
 FROM source AS verify
 
-RUN --mount=type=cache,id=smart-watering-android,target=/root/.gradle,sharing=locked \
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     chmod +x gradlew && \
-    ./gradlew --no-daemon --no-configuration-cache --console=plain --info --stacktrace :app:assembleDebug
+    ./gradlew --no-daemon --console=plain :app:assembleDebug
 
 FROM source AS build
 
@@ -21,7 +22,7 @@ RUN --mount=type=secret,id=release_keystore \
     --mount=type=secret,id=signing_store_password \
     --mount=type=secret,id=signing_key_password \
     --mount=type=secret,id=google_web_client_id \
-    --mount=type=cache,id=smart-watering-android,target=/root/.gradle,sharing=locked \
+    --mount=type=cache,target=/root/.gradle,sharing=locked \
     set -eu; \
     case "$VERSION_NAME" in *[!0-9A-Za-z.+-]*) exit 2;; esac; \
     case "$VERSION_CODE" in ''|*[!0-9]*) exit 2;; esac; \
@@ -34,7 +35,7 @@ RUN --mount=type=secret,id=release_keystore \
     export SMART_WATERING_RELEASE_KEY_ALIAS=release; \
     export SMART_WATERING_RELEASE_KEY_PASSWORD="$(cat /run/secrets/signing_key_password)"; \
     chmod +x gradlew; \
-    ./gradlew --no-daemon --no-configuration-cache --console=plain --info --stacktrace :app:assembleRelease; \
+    ./gradlew --no-daemon --console=plain :app:assembleRelease; \
     apk_source="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"; \
     test -n "$apk_source"; \
     release_dir="/output/releases/$VERSION_CODE"; \

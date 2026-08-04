@@ -44,7 +44,7 @@ fun allPresent(vararg values: String?): Boolean {
 
 android {
     namespace = "com.smartwatering.app"
-    compileSdk = 36
+    compileSdk = 35
 
     val localProperties = Properties()
     val localPropertiesFile = rootProject.file("local.properties")
@@ -98,7 +98,7 @@ android {
     defaultConfig {
         applicationId = "com.smartwatering.app"
         minSdk = 34
-        targetSdk = 36
+        targetSdk = 35
         versionCode = envFirst("VERSION_CODE")?.toIntOrNull() ?: 1
         versionName = envFirst("VERSION_NAME") ?: "1.0-dev"
     }
