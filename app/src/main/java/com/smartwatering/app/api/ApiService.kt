@@ -4,6 +4,9 @@ import com.smartwatering.app.data.*
 import retrofit2.http.*
 
 interface ApiService {
+    @GET("api/v2/app/latest")
+    suspend fun getLatestAppRelease(): AppRelease
+
     @POST("api/v2/auth/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
 

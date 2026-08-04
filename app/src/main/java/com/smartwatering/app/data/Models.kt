@@ -17,6 +17,13 @@ enum class OperationType(val apiValue: String) {
     SCALE_CALIBRATION("scale_calibration")
 }
 
+@JsonClass(generateAdapter = true)
+data class AppRelease(
+    @param:Json(name = "version_name") val versionName: String,
+    @param:Json(name = "version_code") val versionCode: Int,
+    @param:Json(name = "download_url") val downloadUrl: String,
+)
+
 data class LoginRequest(
     val username: String,
     val password: String

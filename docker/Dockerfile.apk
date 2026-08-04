@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+FROM ghcr.io/cirruslabs/android-sdk:36 AS build
+
+WORKDIR /workspace
+COPY . ./
+
+ARG VERSION_NAME
+ARG VERSION_CODE
+ARG PUBLIC_API_BASE_URL
+ARG GIT_COMMIT
+ARG PUBLISHED_AT
+
+RUN --mount=type=secret,id=release_keystore \
+    --mount=type=secret,id=signing_store_password \
+    --mount=type=secret,id=signing_key_password \
+    --mount=type=secret,id=google_web_client_id \
+    --mount=type=cache,id=smart-watering-android,target=/root/.gradle \
+    set -eu; \
+    case "$VERSION_NAME" in *[!0-9A-Za-z.+-]*) exit 2;; esac; \
+    case "$VERSION_CODE" in ''|*[!0-9]*) exit 2;; esac; \
+    test -n "$PUBLIC_API_BASE_URL"; \
+    export VERSION_NAME VERSION_CODE; \
+    export SMART_WATERING_PUBLIC_API_BASE_URL_RELEASE="$PUBLIC_API_BASE_URL"; \
+    export SMART_WATERING_GOOGLE_WEB_CLIENT_ID_RELEASE="$(cat /run/secrets/google_web_client_id)"; \
+    export SMART_WATERING_RELEASE_STORE_FILE=/run/secrets/release_keystore; \
+    export SMART_WATERING_RELEASE_STORE_PASSWORD="$(cat /run/secrets/signing_store_password)"; \
+    export SMART_WATERING_RELEASE_KEY_ALIAS=release; \
+    export SMART_WATERING_RELEASE_KEY_PASSWORD="$(cat /run/secrets/signing_key_password)"; \
+    chmod +x gradlew; \
+    ./gradlew --no-daemon :app:assembleRelease; \
+    apk_source="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"; \
+    test -n "$apk_source"; \
+    release_dir="/output/releases/$VERSION_CODE"; \
+    filename="smart-watering-$VERSION_NAME-$VERSION_CODE.apk"; \
+    mkdir -p "$release_dir"; \
+    cp "$apk_source" "$release_dir/$filename"; \
+    sha256="$(sha256sum "$release_dir/$filename" | cut -d ' ' -f 1)"; \
+    size="$(stat -c %s "$release_dir/$filename")"; \
+    published_at="${PUBLISHED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"; \
+    printf '{\n  "version_name": "%s",\n  "version_code": %s,\n  "filename": "%s",\n  "sha256": "%s",\n  "size": %s,\n  "published_at": "%s",\n  "git_commit": "%s"\n}\n' \
+      "$VERSION_NAME" "$VERSION_CODE" "$filename" "$sha256" "$size" "$published_at" "$GIT_COMMIT" \
+      > "$release_dir/manifest.json"; \
+    cp "$release_dir/manifest.json" /output/releases/latest.json
+
+FROM scratch AS artifact
+COPY --from=build /output/ /
