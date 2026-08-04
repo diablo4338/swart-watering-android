@@ -1,6 +1,7 @@
 package com.smartwatering.app.ui
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.credentials.CredentialManager
@@ -22,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -37,7 +39,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import com.smartwatering.app.BuildConfig
+import com.smartwatering.app.data.AppRelease
 import com.smartwatering.app.data.Device
 import com.smartwatering.app.data.DeviceType
 import com.smartwatering.app.data.LatestStatusResponse
@@ -71,13 +75,18 @@ fun LoginScreen(viewModel: MainViewModel) {
     val coroutineScope = rememberCoroutineScope()
     val googleClientConfigured = BuildConfig.SMART_WATERING_GOOGLE_WEB_CLIENT_ID.isNotBlank()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        VersionInfoButton(
+            viewModel = viewModel,
+            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
         Text("Smart Watering", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(24.dp))
         if (isLoading) {
@@ -148,6 +157,7 @@ fun LoginScreen(viewModel: MainViewModel) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
         }
+        }
     }
 }
 
@@ -188,6 +198,7 @@ fun DevicesScreen(viewModel: MainViewModel) {
             CenterAlignedTopAppBar(
                 title = { Text("Devices") },
                 actions = {
+                    VersionInfoButton(viewModel)
                     IconButton(onClick = { viewModel.logout() }) {
                         Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout")
                     }
@@ -283,6 +294,107 @@ fun DevicesScreen(viewModel: MainViewModel) {
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun VersionInfoButton(
+    viewModel: MainViewModel,
+    modifier: Modifier = Modifier,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val latestRelease by viewModel.latestAppRelease.collectAsState()
+    val isLoading by viewModel.isAppReleaseLoading.collectAsState()
+    val releaseError by viewModel.appReleaseError.collectAsState()
+    val context = LocalContext.current
+
+    IconButton(
+        onClick = {
+            showDialog = true
+            viewModel.refreshAppRelease()
+        },
+        modifier = modifier,
+    ) {
+        Icon(Icons.Default.Info, contentDescription = "Информация о версии")
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Версия приложения") },
+            text = {
+                VersionInfoContent(
+                    latestRelease = latestRelease,
+                    isLoading = isLoading,
+                    error = releaseError,
+                )
+            },
+            confirmButton = {
+                if (latestRelease != null) {
+                    TextButton(
+                        onClick = {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    requireNotNull(latestRelease).downloadUrl.toUri(),
+                                )
+                            )
+                        }
+                    ) {
+                        Text("Скачать")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("Закрыть")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun VersionInfoContent(
+    latestRelease: AppRelease?,
+    isLoading: Boolean,
+    error: String?,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Текущая версия: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        when {
+            latestRelease != null -> {
+                Text(
+                    "Последняя доступная: ${latestRelease.versionName} " +
+                        "(${latestRelease.versionCode})"
+                )
+                Text(
+                    if (latestRelease.versionCode > BuildConfig.VERSION_CODE) {
+                        "Доступно обновление"
+                    } else {
+                        "Установлена актуальная версия"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            isLoading -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Проверяем доступную версию…")
+                }
+            }
+            error != null -> {
+                Text(
+                    "Не удалось проверить обновления: $error",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            else -> Text("Доступная версия пока не определена")
         }
     }
 }

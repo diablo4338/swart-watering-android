@@ -125,6 +125,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _latestAppRelease = MutableStateFlow<AppRelease?>(null)
+    val latestAppRelease: StateFlow<AppRelease?> = _latestAppRelease
+
+    private val _isAppReleaseLoading = MutableStateFlow(false)
+    val isAppReleaseLoading: StateFlow<Boolean> = _isAppReleaseLoading
+
+    private val _appReleaseError = MutableStateFlow<String?>(null)
+    val appReleaseError: StateFlow<String?> = _appReleaseError
+
     private val operationJobs = mutableMapOf<String, Job>()
     private val statusRequestMutexes = mutableMapOf<String, Mutex>()
     private val statusRefreshJobs = mutableMapOf<String, Job>()
@@ -166,6 +175,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         clearLegacyPlaintextPrefs(application)
         checkAutoLogin()
+        refreshAppRelease()
+    }
+
+    fun refreshAppRelease() {
+        viewModelScope.launch {
+            _isAppReleaseLoading.value = true
+            _appReleaseError.value = null
+            try {
+                _latestAppRelease.value = Repository.api.getLatestAppRelease()
+            } catch (e: Exception) {
+                _appReleaseError.value = if (e is HttpException && e.code() == 404) {
+                    "На сервере пока нет опубликованных версий"
+                } else {
+                    readableError(e)
+                }
+            } finally {
+                _isAppReleaseLoading.value = false
+            }
+        }
     }
 
     private fun checkAutoLogin() {

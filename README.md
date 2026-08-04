@@ -66,6 +66,26 @@ Build commands:
 .\gradlew.bat :app:assembleRelease
 ```
 
+From the `client` directory, a debug APK with an explicit test version can be built with:
+
+```bash
+make apk-local-build VERSION_NAME=1.2.3-test VERSION_CODE=1203
+```
+
+The APK is written to `build/local-apk/` and published for the local API under
+`../docker/releases/`. Recreate the local `public-api` container once after
+updating this configuration so that it mounts that directory:
+
+```bash
+cd ..
+make restart
+```
+
+`VERSION_CODE` is the integer used by Android and by the startup update check.
+To test the update popup, keep an older build installed and publish a build with
+a greater `VERSION_CODE`. The popup is intentionally not shown when the installed
+and published codes are equal.
+
 ## Automatic Release Publishing
 
 The app checks `GET /api/v2/app/latest` on startup and offers to download a newer APK

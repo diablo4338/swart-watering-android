@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.smartwatering.app.data.Repository
 import com.smartwatering.app.ui.DevicesScreen
 import com.smartwatering.app.ui.DeviceControlScreen
 import com.smartwatering.app.ui.DetectedWateringHistoryScreen
@@ -37,11 +36,12 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 val viewModel: MainViewModel = viewModel()
                 val currentScreen by viewModel.currentScreen.collectAsState()
+                val latestAppRelease by viewModel.latestAppRelease.collectAsState()
                 val context = LocalContext.current
                 val snackbarHostState = remember { SnackbarHostState() }
 
-                LaunchedEffect(Unit) {
-                    val release = runCatching { Repository.api.getLatestAppRelease() }.getOrNull()
+                LaunchedEffect(latestAppRelease?.versionCode) {
+                    val release = latestAppRelease
                     if (release != null && release.versionCode > BuildConfig.VERSION_CODE) {
                         val result = snackbarHostState.showSnackbar(
                             message = "Доступна новая версия ${release.versionName}",
