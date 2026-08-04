@@ -1,0 +1,12 @@
+.git
+.github
+.gradle
+.idea
+.kotlin
+**/build
+local.properties
+app/.env.debug
+app/.env.release
+app/release
+keystores
+*.iml

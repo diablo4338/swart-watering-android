@@ -67,6 +67,12 @@ data class DetectedWateringHistoryUiState(
     val error: String? = null
 )
 
+data class AppReleaseUiState(
+    val latest: AppRelease? = null,
+    val isLoading: Boolean = false,
+    val checked: Boolean = false,
+)
+
 sealed class Screen {
     object Login : Screen()
     object Devices : Screen()
@@ -125,6 +131,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _appRelease = MutableStateFlow(AppReleaseUiState())
+    val appRelease: StateFlow<AppReleaseUiState> = _appRelease
+
     private val operationJobs = mutableMapOf<String, Job>()
     private val statusRequestMutexes = mutableMapOf<String, Mutex>()
     private val statusRefreshJobs = mutableMapOf<String, Job>()
@@ -165,7 +174,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         clearLegacyPlaintextPrefs(application)
+        checkForAppUpdate()
         checkAutoLogin()
+    }
+
+    fun checkForAppUpdate() {
+        if (_appRelease.value.isLoading) return
+        viewModelScope.launch {
+            _appRelease.value = _appRelease.value.copy(isLoading = true)
+            val release = runCatching { Repository.api.getLatestAppRelease() }.getOrNull()
+            _appRelease.value = AppReleaseUiState(
+                latest = release,
+                isLoading = false,
+                checked = true,
+            )
+        }
     }
 
     private fun checkAutoLogin() {

@@ -66,6 +66,34 @@ Build commands:
 .\gradlew.bat :app:assembleRelease
 ```
 
+## Test Update Publication
+
+Build a debug-signed APK and publish it into the directory served by the backend:
+
+```bash
+make test-publish
+```
+
+Defaults are defined in this repository's `Makefile`:
+
+- `APK_API_BASE_URL=http://10.0.2.2:8081/` for Android Emulator;
+- `APK_RELEASES_DIR=/srv/smart-watering/releases`;
+- `APK_DEBUG_KEYSTORE=/home/sergei/.android/debug.keystore`;
+- `APK_VERSION_NAME=1.2.3`;
+- `APK_VERSION_CODE=100`.
+
+For a physical device, pass the backend host's LAN address:
+
+```bash
+make test-publish APK_API_BASE_URL=http://192.168.1.10:8081/
+```
+
+The test build uses the same debug key as Android Studio, so a downloaded APK can
+replace an IDE-installed debug build. The command builds in Docker and atomically
+publishes the APK and `latest.json`. `APK_VERSION_NAME`, `APK_VERSION_CODE`,
+`APK_RELEASES_DIR`, and `APK_DEBUG_KEYSTORE` can all be overridden on the command line.
+The backend must mount the same `APK_RELEASES_DIR` host path as `/releases`.
+
 ## Automatic Release Publishing
 
 The app checks `GET /api/v2/app/latest` on startup and offers to download a newer APK

@@ -9,26 +9,38 @@ ARG VERSION_CODE
 ARG PUBLIC_API_BASE_URL
 ARG GIT_COMMIT
 ARG PUBLISHED_AT
+ARG BUILD_VARIANT=release
 
 RUN --mount=type=secret,id=release_keystore \
     --mount=type=secret,id=signing_store_password \
     --mount=type=secret,id=signing_key_password \
     --mount=type=secret,id=google_web_client_id \
+    --mount=type=secret,id=debug_keystore \
+    --mount=type=cache,id=smart-watering-android-debug-signing,target=/root/.android \
     --mount=type=cache,id=smart-watering-android,target=/root/.gradle \
     set -eu; \
     case "$VERSION_NAME" in *[!0-9A-Za-z.+-]*) exit 2;; esac; \
     case "$VERSION_CODE" in ''|*[!0-9]*) exit 2;; esac; \
     test -n "$PUBLIC_API_BASE_URL"; \
     export VERSION_NAME VERSION_CODE; \
-    export SMART_WATERING_PUBLIC_API_BASE_URL_RELEASE="$PUBLIC_API_BASE_URL"; \
-    export SMART_WATERING_GOOGLE_WEB_CLIENT_ID_RELEASE="$(cat /run/secrets/google_web_client_id)"; \
-    export SMART_WATERING_RELEASE_STORE_FILE=/run/secrets/release_keystore; \
-    export SMART_WATERING_RELEASE_STORE_PASSWORD="$(cat /run/secrets/signing_store_password)"; \
-    export SMART_WATERING_RELEASE_KEY_ALIAS=release; \
-    export SMART_WATERING_RELEASE_KEY_PASSWORD="$(cat /run/secrets/signing_key_password)"; \
     chmod +x gradlew; \
-    ./gradlew --no-daemon :app:assembleRelease; \
-    apk_source="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"; \
+    if [ "$BUILD_VARIANT" = release ]; then \
+      export SMART_WATERING_PUBLIC_API_BASE_URL_RELEASE="$PUBLIC_API_BASE_URL"; \
+      export SMART_WATERING_GOOGLE_WEB_CLIENT_ID_RELEASE="$(cat /run/secrets/google_web_client_id)"; \
+      export SMART_WATERING_RELEASE_STORE_FILE=/run/secrets/release_keystore; \
+      export SMART_WATERING_RELEASE_STORE_PASSWORD="$(cat /run/secrets/signing_store_password)"; \
+      export SMART_WATERING_RELEASE_KEY_ALIAS=release; \
+      export SMART_WATERING_RELEASE_KEY_PASSWORD="$(cat /run/secrets/signing_key_password)"; \
+      ./gradlew --no-daemon :app:assembleRelease; \
+    elif [ "$BUILD_VARIANT" = debug ]; then \
+      export SMART_WATERING_PUBLIC_API_BASE_URL_DEBUG="$PUBLIC_API_BASE_URL"; \
+      export SMART_WATERING_GOOGLE_WEB_CLIENT_ID_DEBUG=""; \
+      install -m 600 /run/secrets/debug_keystore /root/.android/debug.keystore; \
+      ./gradlew --no-daemon :app:assembleDebug; \
+    else \
+      echo "Unsupported BUILD_VARIANT: $BUILD_VARIANT" >&2; exit 2; \
+    fi; \
+    apk_source="$(find "app/build/outputs/apk/$BUILD_VARIANT" -name '*.apk' -type f | head -n 1)"; \
     test -n "$apk_source"; \
     release_dir="/output/releases/$VERSION_CODE"; \
     filename="smart-watering-$VERSION_NAME-$VERSION_CODE.apk"; \

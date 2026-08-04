@@ -79,8 +79,7 @@ jobs:
               exit 1
             fi
             if [[ "$version_code" -le "$current_version_code" ]]; then
-              echo "versionCode downgrade rejected: $version_code <= $current_version_code" >&2
-              exit 1
+              version_code=$((current_version_code + 1))
             fi
           fi
           echo "VERSION_CODE=$version_code" >> "$GITHUB_ENV"

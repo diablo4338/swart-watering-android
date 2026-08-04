@@ -1,6 +1,7 @@
 package com.smartwatering.app.ui
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.credentials.CredentialManager
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import com.smartwatering.app.BuildConfig
 import com.smartwatering.app.data.Device
 import com.smartwatering.app.data.DeviceType
@@ -182,12 +185,71 @@ fun DevicesScreen(viewModel: MainViewModel) {
     val wateringHistory by viewModel.wateringHistory.collectAsState()
     val isDevicesLoading by viewModel.isDevicesLoading.collectAsState()
     val globalError by viewModel.error.collectAsState()
+    val appRelease by viewModel.appRelease.collectAsState()
+    val context = LocalContext.current
+    var showAppInfo by remember { mutableStateOf(false) }
+
+    if (showAppInfo) {
+        val latest = appRelease.latest
+        val availableUpdate = latest?.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
+        AlertDialog(
+            onDismissRequest = { showAppInfo = false },
+            icon = { Icon(Icons.Default.Info, contentDescription = null) },
+            title = { Text("О приложении") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Установлена: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                    Text(
+                        when {
+                            appRelease.isLoading -> "Последняя доступная: проверяем…"
+                            latest != null -> "Последняя доступная: ${latest.versionName} (${latest.versionCode})"
+                            appRelease.checked -> "Последняя доступная: не удалось получить"
+                            else -> "Последняя доступная: ещё не проверена"
+                        }
+                    )
+                    if (latest != null && availableUpdate == null) {
+                        Text("Установлена актуальная версия")
+                    }
+                }
+            },
+            confirmButton = {
+                if (availableUpdate != null) {
+                    TextButton(
+                        onClick = {
+                            showAppInfo = false
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, availableUpdate.downloadUrl.toUri())
+                                )
+                            }
+                        }
+                    ) {
+                        Text("Скачать")
+                    }
+                } else {
+                    TextButton(onClick = { showAppInfo = false }) {
+                        Text("Закрыть")
+                    }
+                }
+            },
+            dismissButton = {
+                if (!appRelease.isLoading) {
+                    TextButton(onClick = { viewModel.checkForAppUpdate() }) {
+                        Text("Проверить")
+                    }
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Devices") },
                 actions = {
+                    IconButton(onClick = { showAppInfo = true }) {
+                        Icon(Icons.Default.Info, contentDescription = "Версия приложения")
+                    }
                     IconButton(onClick = { viewModel.logout() }) {
                         Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout")
                     }
