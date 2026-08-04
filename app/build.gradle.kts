@@ -99,14 +99,18 @@ android {
         applicationId = "com.smartwatering.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = envFirst("VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = envFirst("VERSION_NAME") ?: "1.0-dev"
     }
 
     val releaseStoreFile = localProperties.getProperty("SMART_WATERING_RELEASE_STORE_FILE")
+        ?: envFirst("SMART_WATERING_RELEASE_STORE_FILE")
     val releaseStorePassword = localProperties.getProperty("SMART_WATERING_RELEASE_STORE_PASSWORD")
+        ?: envFirst("SMART_WATERING_RELEASE_STORE_PASSWORD")
     val releaseKeyAlias = localProperties.getProperty("SMART_WATERING_RELEASE_KEY_ALIAS")
+        ?: envFirst("SMART_WATERING_RELEASE_KEY_ALIAS")
     val releaseKeyPassword = localProperties.getProperty("SMART_WATERING_RELEASE_KEY_PASSWORD")
+        ?: envFirst("SMART_WATERING_RELEASE_KEY_PASSWORD")
     val hasReleaseSigning = allPresent(
         releaseStoreFile,
         releaseStorePassword,
@@ -117,10 +121,10 @@ android {
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
-                storeFile = rootProject.file(releaseStoreFile)
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
+                storeFile = rootProject.file(requireNotNull(releaseStoreFile))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
             }
         }
     }

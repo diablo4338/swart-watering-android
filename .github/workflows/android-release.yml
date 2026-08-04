@@ -1,0 +1,133 @@
+name: Android release
+
+on:
+  push:
+    branches: [master]
+    tags: ['app-v*']
+  workflow_dispatch:
+
+concurrency:
+  group: smart-watering-android-release-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    runs-on: [self-hosted, linux, x64]
+    environment: dev
+    env:
+      PUBLIC_API_BASE_URL: ${{ vars.PUBLIC_API_BASE_URL }}
+      RELEASES_DIR: ${{ vars.RELEASES_DIR }}
+      SIGNING_DIR: ${{ vars.SIGNING_DIR }}
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          : "${PUBLIC_API_BASE_URL:?Set PUBLIC_API_BASE_URL in the dev environment}"
+          : "${RELEASES_DIR:?Set RELEASES_DIR in the dev environment}"
+          : "${SIGNING_DIR:?Set SIGNING_DIR in the dev environment}"
+          : "${GOOGLE_WEB_CLIENT_ID:?Set GOOGLE_WEB_CLIENT_ID in the dev environment}"
+          version_code=$((1000 + GITHUB_RUN_NUMBER))
+          version_tag="$(git describe --tags --match 'app-v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 HEAD 2>/dev/null || true)"
+          if [[ -z "$version_tag" ]]; then
+            echo "No reachable app-vMAJOR.MINOR.PATCH tag" >&2
+            exit 1
+          fi
+          base_version="${version_tag#app-v}"
+          if [[ ! "$base_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Invalid release tag: $version_tag" >&2
+            exit 1
+          fi
+          base_major="${BASH_REMATCH[1]}"
+          base_minor="${BASH_REMATCH[2]}"
+          base_patch="${BASH_REMATCH[3]}"
+          version="$base_version"
+
+          version_gt() {
+            [[ "$1" != "$2" ]] && [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | tail -n1)" == "$1" ]]
+          }
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "$version_tag" ]]; then
+            echo "The pushed tag is not the release base resolved for this commit" >&2
+            exit 1
+          fi
+
+          if [[ -f "$RELEASES_DIR/latest.json" ]]; then
+            current_version="$(awk -F'"' '/"version_name"/ {print $4; exit}' "$RELEASES_DIR/latest.json")"
+            current_version_code="$(awk -F: '/"version_code"/ {gsub(/[^0-9]/, "", $2); print $2; exit}' "$RELEASES_DIR/latest.json")"
+            if [[ ! "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "Published version has an invalid format: $current_version" >&2
+              exit 1
+            fi
+            current_major="${BASH_REMATCH[1]}"
+            current_minor="${BASH_REMATCH[2]}"
+            current_patch="${BASH_REMATCH[3]}"
+            if version_gt "$base_version" "$current_version"; then
+              version="$base_version"
+            elif [[ "$base_major" == "$current_major" && "$base_minor" == "$current_minor" && "$base_patch" -le "$current_patch" ]]; then
+              version="$base_major.$base_minor.$((current_patch + 1))"
+            else
+              echo "Version base downgrade rejected: $base_version cannot follow $current_version" >&2
+              exit 1
+            fi
+            if [[ "$version_code" -le "$current_version_code" ]]; then
+              echo "versionCode downgrade rejected: $version_code <= $current_version_code" >&2
+              exit 1
+            fi
+          fi
+          echo "VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$version" >> "$GITHUB_ENV"
+          echo "PUBLISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - name: Build signed APK in Docker
+        shell: bash
+        run: |
+          set -a
+          source "$SIGNING_DIR/release.env"
+          set +a
+          docker buildx build \
+            --file docker/Dockerfile.apk \
+            --target artifact \
+            --output type=local,dest=build/apk \
+            --build-arg VERSION_NAME="$VERSION_NAME" \
+            --build-arg VERSION_CODE="$VERSION_CODE" \
+            --build-arg PUBLIC_API_BASE_URL="$PUBLIC_API_BASE_URL" \
+            --build-arg GIT_COMMIT="$GITHUB_SHA" \
+            --build-arg PUBLISHED_AT="$PUBLISHED_AT" \
+            --secret id=release_keystore,src="$SIGNING_DIR/release.jks" \
+            --secret id=google_web_client_id,env=GOOGLE_WEB_CLIENT_ID \
+            --secret id=signing_store_password,env=SIGNING_STORE_PASSWORD \
+            --secret id=signing_key_password,env=SIGNING_KEY_PASSWORD \
+            .
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: smart-watering-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}
+          path: build/apk/releases
+          if-no-files-found: error
+
+      - name: Publish release atomically
+        shell: bash
+        run: |
+          staging="$RELEASES_DIR/.incoming-$VERSION_CODE"
+          if [[ -f "$RELEASES_DIR/latest.json" ]]; then
+            current_version_code="$(awk -F: '/"version_code"/ {gsub(/[^0-9]/, "", $2); print $2}' "$RELEASES_DIR/latest.json")"
+            test "$VERSION_CODE" -gt "$current_version_code"
+          fi
+          test ! -e "$RELEASES_DIR/$VERSION_CODE"
+          install -d -m 755 "$staging" "$RELEASES_DIR"
+          cp -a "build/apk/releases/$VERSION_CODE" "$staging/"
+          cp "build/apk/releases/latest.json" "$staging/latest.json"
+          chmod 755 "$staging/$VERSION_CODE"
+          chmod 644 "$staging/$VERSION_CODE"/* "$staging/latest.json"
+          mv "$staging/$VERSION_CODE" "$RELEASES_DIR/$VERSION_CODE"
+          mv "$staging/latest.json" "$RELEASES_DIR/latest.json"
+          rmdir "$staging"
