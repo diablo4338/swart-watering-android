@@ -92,33 +92,35 @@ fun LoginScreen(viewModel: MainViewModel) {
         if (isLoading) {
             CircularProgressIndicator()
         } else {
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Username") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = { viewModel.login(username, password) },
-                enabled = username.isNotBlank() && password.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Login")
+            if (BuildConfig.DEBUG) {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { viewModel.login(username, password) },
+                    enabled = username.isNotBlank() && password.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Login")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(
                 onClick = {
                     coroutineScope.launch {
@@ -331,7 +333,7 @@ private fun VersionInfoButton(
                 )
             },
             confirmButton = {
-                if (latestRelease != null) {
+                if (latestRelease?.versionCode?.let { it > BuildConfig.VERSION_CODE } == true) {
                     TextButton(
                         onClick = {
                             context.startActivity(
@@ -362,19 +364,18 @@ private fun VersionInfoContent(
     error: String?,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Текущая версия: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        Text("Текущая версия: ${BuildConfig.VERSION_NAME}")
         when {
+            latestRelease != null && latestRelease.versionCode > BuildConfig.VERSION_CODE -> {
+                Text("Последняя: ${latestRelease.versionName}")
+                Text(
+                    "Доступно обновление",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             latestRelease != null -> {
                 Text(
-                    "Последняя доступная: ${latestRelease.versionName} " +
-                        "(${latestRelease.versionCode})"
-                )
-                Text(
-                    if (latestRelease.versionCode > BuildConfig.VERSION_CODE) {
-                        "Доступно обновление"
-                    } else {
-                        "Установлена актуальная версия"
-                    },
+                    "Актуальная версия",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -390,7 +391,7 @@ private fun VersionInfoContent(
             }
             error != null -> {
                 Text(
-                    "Не удалось проверить обновления: $error",
+                    "Не удалось проверить обновления",
                     color = MaterialTheme.colorScheme.error,
                 )
             }
