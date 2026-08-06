@@ -36,7 +36,7 @@ data class DeviceUIState(
     val lastFinishedOperationEvents: List<OperationEvent> = emptyList(),
     val lastFinishedNeedsAck: Boolean = false,
     val plannedWatering: PlannedWatering? = null,
-    val isOnline: Boolean? = null,
+    val isOnline: Boolean = false,
     val isActionLoading: Boolean = false,
     val isStatusRefreshing: Boolean = false,
     val isWateringTask: Boolean = false,
@@ -145,6 +145,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var deviceListRefreshJob: Job? = null
     private var wateringHistoryRefreshJob: Job? = null
     private var deviceControlRefreshJob: Job? = null
+    private var activePollingDeviceName: String? = null
     private val controlOperationJobs = mutableMapOf<String, Job>()
     private val suppressedOperationIds = mutableSetOf<String>()
     private val controlOperationTypes = setOf(
@@ -297,6 +298,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _deviceStates.value = emptyMap()
         _wateringHistory.value = WateringHistoryUiState()
         _devices.value = emptyList()
+        activePollingDeviceName = null
         operationJobs.values.toList().forEach { it.cancel() }
         operationJobs.clear()
         statusRefreshJobs.values.toList().forEach { it.cancel() }
@@ -644,8 +646,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             operationJobs.remove(deviceName)?.cancel()
         }
 
-        devices.forEach { device ->
-            configureDevicePolling(device)
+        if (activePollingDeviceName != null) {
+            val activeDevice = devices.firstOrNull {
+                it.name == activePollingDeviceName
+            } ?: devices.firstOrNull()
+            setActiveDevice(activeDevice)
+        } else if (_selectedDeviceName.value == null) {
+            setActiveDevice(devices.firstOrNull())
         }
         if (wateringHistoryCache[false].isNullOrEmpty()) {
             fetchWateringHistory(successfulOnly = false)
@@ -671,6 +678,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 fetchWaterConsumption(device)
             }
         }
+    }
+
+    fun setActiveDevice(device: Device?) {
+        val expectedPollingIsActive = when (device?.type) {
+            DeviceType.TANK.apiValue -> wateringStatusJobs[device.name]?.isActive == true
+            DeviceType.PLANT.apiValue ->
+                statusRefreshJobs[device.name]?.isActive == true &&
+                    waterConsumptionJobs[device.name]?.isActive == true
+            else -> false
+        }
+        if (activePollingDeviceName == device?.name && expectedPollingIsActive) return
+
+        statusRefreshJobs.values.toList().forEach { it.cancel() }
+        statusRefreshJobs.clear()
+        snapshotStatusJobs.values.toList().forEach { it.cancel() }
+        snapshotStatusJobs.clear()
+        wateringStatusJobs.values.toList().forEach { it.cancel() }
+        wateringStatusJobs.clear()
+        waterConsumptionJobs.values.toList().forEach { it.cancel() }
+        waterConsumptionJobs.clear()
+
+        activePollingDeviceName = device?.name
+        if (device == null) return
+
+        _selectedDeviceName.value = device.name
+        configureDevicePolling(device)
     }
 
     private fun mergeDevicesPreservingOrder(current: List<Device>, incoming: List<Device>): List<Device> {
@@ -749,9 +782,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         statusRefreshJobs.remove(device.name)?.cancel()
         startSnapshotStatusAutoRefresh(device)
         statusRefreshJobs[device.name] = viewModelScope.launch {
-            // Let the cheap stored snapshot populate the card before contacting
-            // sleeping hardware through the comparatively slow live endpoint.
-            delay(LIVE_STATUS_POLL_INTERVAL_MS.milliseconds)
             while (true) {
                 val startedAt = System.currentTimeMillis()
                 val liveAvailable = fetchLiveStatusForPolling(device)

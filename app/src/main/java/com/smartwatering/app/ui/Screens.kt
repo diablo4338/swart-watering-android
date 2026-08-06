@@ -251,6 +251,9 @@ fun DevicesScreen(viewModel: MainViewModel) {
                 initialPage = initialPage,
                 pageCount = { devices.size + 1 }
             )
+            LaunchedEffect(pagerState.currentPage, devices) {
+                viewModel.setActiveDevice(devices.getOrNull(pagerState.currentPage))
+            }
             Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                 if (globalError != null) {
                     Surface(color = MaterialTheme.colorScheme.errorContainer) {
@@ -423,16 +426,8 @@ fun DevicePage(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
-                val statusColor = when (uiState.isOnline) {
-                    true -> Color.Green
-                    false -> Color.Red
-                    null -> Color.Gray
-                }
-                val statusText = when (uiState.isOnline) {
-                    true -> "Online"
-                    false -> "Offline"
-                    null -> "Checking..."
-                }
+                val statusColor = if (uiState.isOnline) Color.Green else Color.Red
+                val statusText = if (uiState.isOnline) "Online" else "Offline"
                 Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(statusColor))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(text = statusText, style = MaterialTheme.typography.labelMedium, color = statusColor)
