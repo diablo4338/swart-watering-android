@@ -44,6 +44,13 @@ interface ApiService {
         @Path("eventId") eventId: Int
     ): InvalidateDetectedWateringResponse
 
+    @PUT("api/v2/devices/{device}/detected-waterings/{eventId}/fertilized")
+    suspend fun setDetectedWateringFertilized(
+        @Path("device") deviceName: String,
+        @Path("eventId") eventId: Int,
+        @Body request: SetFertilizedRequest
+    ): SetFertilizedResponse
+
     @GET("api/v2/watering/history")
     suspend fun getWateringHistory(@Query("successful") successfulOnly: Boolean = false): WateringHistoryResponse
 

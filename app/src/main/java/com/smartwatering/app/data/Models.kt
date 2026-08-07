@@ -81,7 +81,8 @@ data class DetectedWatering(
     @param:Json(name = "weight_before_g") val weightBeforeG: Double,
     @param:Json(name = "weight_after_g") val weightAfterG: Double,
     @param:Json(name = "amount_g") val amountG: Double,
-    val source: String
+    val source: String,
+    val fertilized: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)
@@ -96,6 +97,12 @@ data class InvalidateDetectedWateringResponse(
     val id: Int,
     val invalid: Boolean
 )
+
+@JsonClass(generateAdapter = true)
+data class SetFertilizedRequest(val fertilized: Boolean)
+
+@JsonClass(generateAdapter = true)
+data class SetFertilizedResponse(val id: Int, val fertilized: Boolean)
 
 @JsonClass(generateAdapter = true)
 data class DeviceTypesResponse(val types: List<String>)

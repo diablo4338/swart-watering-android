@@ -64,6 +64,7 @@ data class DetectedWateringHistoryUiState(
     val nextOffset: Int? = null,
     val isLoading: Boolean = false,
     val deletingId: Int? = null,
+    val fertilizingId: Int? = null,
     val error: String? = null
 )
 
@@ -437,6 +438,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _detectedWateringHistory.value =
                     _detectedWateringHistory.value.copy(deletingId = null)
+            }
+        }
+    }
+
+    fun toggleDetectedWateringFertilized(device: Device, eventId: Int) {
+        val state = _detectedWateringHistory.value
+        if (state.fertilizingId != null) return
+        val current = state.waterings.firstOrNull { it.id == eventId } ?: return
+        val fertilized = !current.fertilized
+        viewModelScope.launch {
+            _detectedWateringHistory.value = state.copy(fertilizingId = eventId, error = null)
+            try {
+                Repository.api.setDetectedWateringFertilized(
+                    device.name, eventId, SetFertilizedRequest(fertilized)
+                )
+                _detectedWateringHistory.value = _detectedWateringHistory.value.copy(
+                    waterings = _detectedWateringHistory.value.waterings.map {
+                        if (it.id == eventId) it.copy(fertilized = fertilized) else it
+                    }
+                )
+            } catch (e: Exception) {
+                _detectedWateringHistory.value =
+                    _detectedWateringHistory.value.copy(error = readableError(e))
+            } finally {
+                _detectedWateringHistory.value =
+                    _detectedWateringHistory.value.copy(fertilizingId = null)
             }
         }
     }

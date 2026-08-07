@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -531,13 +532,69 @@ fun DetectedWateringHistoryScreen(viewModel: MainViewModel, device: Device) {
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            SimpleDateFormat(
-                                "dd.MM.yyyy HH:mm",
-                                Locale.getDefault()
-                            ).format(Date((watering.occurredAt * 1000).toLong())),
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                SimpleDateFormat(
+                                    "dd.MM.yyyy HH:mm",
+                                    Locale.getDefault()
+                                ).format(Date((watering.occurredAt * 1000).toLong())),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Surface(
+                                shape = CircleShape,
+                                color = if (watering.fertilized) Color(0xFF2E7D32)
+                                else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.size(36.dp).pointerInput(
+                                    watering.id,
+                                    watering.fertilized,
+                                    state.fertilizingId
+                                ) {
+                                    detectTapGestures(
+                                        onPress = {
+                                            if (state.fertilizingId != null) {
+                                                tryAwaitRelease()
+                                                return@detectTapGestures
+                                            }
+                                            val fertilizerJob = coroutineScope.launch {
+                                                delay(3.seconds)
+                                                viewModel.toggleDetectedWateringFertilized(
+                                                    device, watering.id
+                                                )
+                                            }
+                                            tryAwaitRelease()
+                                            fertilizerJob.cancel()
+                                        }
+                                    )
+                                }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (state.fertilizingId == watering.id) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp,
+                                            color = if (watering.fertilized) Color.White
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Filled.Eco,
+                                            contentDescription = if (watering.fertilized) {
+                                                "Fertilizer added; hold to clear"
+                                            } else {
+                                                "No fertilizer; hold to mark"
+                                            },
+                                            tint = if (watering.fertilized) Color.White
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(21.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         Text("Added: ${watering.amountG.roundToInt()} g")
                         Text(
                             "Weight: ${watering.weightBeforeG.roundToInt()} → " +
