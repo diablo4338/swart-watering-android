@@ -135,6 +135,8 @@ android {
         }
         release {
             configurePublicApiBuildConfig(this, "release")
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
