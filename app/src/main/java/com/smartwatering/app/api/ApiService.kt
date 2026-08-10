@@ -22,6 +22,15 @@ interface ApiService {
     @GET("api/v2/device-types")
     suspend fun getDeviceTypes(): DeviceTypesResponse
 
+    @GET("api/v2/devices/{device}/watering-parameters")
+    suspend fun getWateringParameters(@Path("device") deviceName: String): WateringParameters
+
+    @PUT("api/v2/devices/{device}/watering-parameters")
+    suspend fun updateWateringParameters(
+        @Path("device") deviceName: String,
+        @Body request: WateringParametersRequest
+    ): WateringParameters
+
     @POST("api/v2/devices/{device}/status")
     suspend fun queueStatusRefresh(@Path("device") deviceName: String, @Body body: Map<String, String> = emptyMap()): OperationResponse
 

@@ -108,6 +108,25 @@ data class SetFertilizedResponse(val id: Int, val fertilized: Boolean)
 data class DeviceTypesResponse(val types: List<String>)
 
 @JsonClass(generateAdapter = true)
+data class WateringParameters(
+    val device: String,
+    @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
+    @param:Json(name = "dry_weight_updated_at") val dryWeightUpdatedAt: Double? = null,
+    @param:Json(name = "wet_weight_g") val wetWeightG: Int? = null,
+    @param:Json(name = "wet_weight_updated_at") val wetWeightUpdatedAt: Double? = null,
+    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Int? = null,
+    @param:Json(name = "watering_loss_threshold_updated_at") val wateringLossThresholdUpdatedAt: Double? = null,
+    @param:Json(name = "operation_id") val operationId: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class WateringParametersRequest(
+    @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
+    @param:Json(name = "wet_weight_g") val wetWeightG: Int? = null,
+    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Int? = null,
+)
+
+@JsonClass(generateAdapter = true)
 data class DeviceInfo(
     val name: String?,
     val type: String?
@@ -133,6 +152,8 @@ data class WateringInfo(
 data class DeviceConfig(
     @param:Json(name = "target_g") val targetG: Double?,
     @param:Json(name = "dry_weight_g") val dryWeightG: Double?,
+    @param:Json(name = "wet_weight_g") val wetWeightG: Double? = null,
+    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Double? = null,
     @param:Json(name = "tare_weight_g") val tareWeightG: Double?,
     @param:Json(name = "sleep_disabled") val sleepDisabled: Boolean? = null,
     @param:Json(name = "sleep_interval_min") val sleepIntervalMin: Int? = null
@@ -148,7 +169,7 @@ data class CalibrationRequest(@param:Json(name = "weight_g") val weightG: Double
 data class DeviceConfigRequest(
     @param:Json(name = "device_type") val deviceType: String,
     val name: String,
-    @param:Json(name = "dry_weight_g") val dryWeightG: Int,
+    @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
     @param:Json(name = "tare_weight_g") val tareWeightG: Int
 )
 
@@ -194,6 +215,8 @@ data class OperationResponse(
     val name: String? = null,
     @param:Json(name = "dry_weight_g") val dryWeightG: Double? = null,
     @param:Json(name = "tare_weight_g") val tareWeightG: Double? = null,
+    @param:Json(name = "wet_weight_g") val wetWeightG: Double? = null,
+    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Double? = null,
     val error: OperationError? = null,
     @param:Json(name = "created_at") val createdAt: Double = 0.0,
     @param:Json(name = "updated_at") val updatedAt: Double = 0.0,

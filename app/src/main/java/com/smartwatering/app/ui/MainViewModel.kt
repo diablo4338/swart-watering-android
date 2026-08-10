@@ -87,6 +87,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val DEVICE_LIST_POLL_INTERVAL_MS = 10000L
         const val WATERING_HISTORY_POLL_INTERVAL_MS = 30000L
         const val WATER_CONSUMPTION_POLL_INTERVAL_MS = 300000L
+        const val NO_DEVICES_ERROR = "No registered devices returned by the API."
+        const val DEVICES_LOAD_ERROR_PREFIX = "Failed to load devices:"
     }
 
     private val prefs = createSecurePrefs(application)
@@ -105,6 +107,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _deviceStates = MutableStateFlow<Map<String, DeviceUIState>>(emptyMap())
     val deviceStates: StateFlow<Map<String, DeviceUIState>> = _deviceStates
+
+    private val _wateringParameters = MutableStateFlow<Map<String, WateringParameters>>(emptyMap())
+    val wateringParameters: StateFlow<Map<String, WateringParameters>> = _wateringParameters
 
     private val _wateringHistory = MutableStateFlow(WateringHistoryUiState())
     val wateringHistory: StateFlow<WateringHistoryUiState> = _wateringHistory
@@ -328,13 +333,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isDevicesLoading.value = true
             _error.value = null
+            startDeviceListAutoRefresh()
             try {
                 refreshDevicesOnce()
-                startDeviceListAutoRefresh()
             } catch (e: Exception) {
                 handleApiError(e)
                 if (e !is HttpException || e.code() != 401) {
-                    _error.value = "Failed to load devices: ${readableError(e)}"
+                    _error.value = "$DEVICES_LOAD_ERROR_PREFIX ${readableError(e)}"
                 }
             } finally {
                 _isDevicesLoading.value = false
@@ -573,6 +578,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (operation.status in listOf("success", "error", "timeout", "cancelled")) {
                             if (operation.status == "success") {
                                 fetchDeviceStatus(device)
+                                if (operation.dryWeightG != null ||
+                                    operation.wetWeightG != null ||
+                                    operation.wateringLossThresholdPercent != null
+                                ) {
+                                    loadWateringParameters(device)
+                                }
                             }
                             break
                         }
@@ -607,16 +618,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Repository.api.calibrate(device.name, CalibrationRequest(weightG))
     }
 
+    fun loadWateringParameters(device: Device) {
+        viewModelScope.launch {
+            runCatching { Repository.api.getWateringParameters(device.name) }
+                .onSuccess { parameters ->
+                    _wateringParameters.update { it + (device.name to parameters) }
+                }
+                .onFailure {
+                    val detail = (it as? Exception)?.let(::readableError) ?: it.message.orEmpty()
+                    _error.value = "Failed to load watering parameters: $detail"
+                }
+        }
+    }
+
+    fun saveWateringParameters(device: Device, dry: Int?, wet: Int?, threshold: Int?) {
+        viewModelScope.launch {
+            try {
+                val parameters = Repository.api.updateWateringParameters(
+                    device.name, WateringParametersRequest(dry, wet, threshold)
+                )
+                _wateringParameters.update { it + (device.name to parameters) }
+                parameters.operationId?.let { trackControlOperation(device, it) }
+            } catch (e: Exception) {
+                _error.value = "Failed to save watering parameters: ${readableError(e)}"
+            }
+        }
+    }
+
     fun updateDeviceConfig(
         device: Device,
         deviceType: String,
         name: String,
-        dryWeightG: Int,
         tareWeightG: Int
     ) = runControlCommand(device, "Configuration command queued") {
         Repository.api.updateConfig(
             device.name,
-            DeviceConfigRequest(deviceType, name, dryWeightG, tareWeightG)
+            DeviceConfigRequest(deviceType, name, tareWeightG = tareWeightG)
         )
     }
 
@@ -654,15 +691,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val devices = mergeDevicesPreservingOrder(_devices.value, response.devices)
         _devices.value = devices
         _deviceStates.update { current ->
-            devices.fold(current) { states, device ->
-                val old = states[device.name] ?: DeviceUIState()
-                states + (device.name to old.copy(
+            devices.associate { device ->
+                val old = current[device.name] ?: DeviceUIState()
+                device.name to old.copy(
                     hasPendingControlOperations = device.hasPendingOperations
-                ))
+                )
             }
         }
         if (response.devices.isEmpty()) {
-            _error.value = "No registered devices returned by the API."
+            _error.value = NO_DEVICES_ERROR
+        } else if (
+            _error.value == NO_DEVICES_ERROR ||
+            _error.value?.startsWith(DEVICES_LOAD_ERROR_PREFIX) == true
+        ) {
+            _error.value = null
         }
 
         removedDeviceNames.forEach { deviceName ->
@@ -671,6 +713,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             wateringStatusJobs.remove(deviceName)?.cancel()
             waterConsumptionJobs.remove(deviceName)?.cancel()
             operationJobs.remove(deviceName)?.cancel()
+        }
+
+        val openDeviceName = when (val screen = _currentScreen.value) {
+            is Screen.DeviceControl -> screen.device.name
+            is Screen.DetectedWateringHistory -> screen.device.name
+            else -> null
+        }
+        if (openDeviceName != null && openDeviceName in removedDeviceNames) {
+            deviceControlRefreshJob?.cancel()
+            deviceControlRefreshJob = null
+            controlOperationJobs.values.toList().forEach { it.cancel() }
+            controlOperationJobs.clear()
+            _deviceControl.value = DeviceControlUiState()
+            _detectedWateringHistory.value = DetectedWateringHistoryUiState()
+            _currentScreen.value = Screen.Devices
+        }
+
+        if (_selectedDeviceName.value?.let(removedDeviceNames::contains) == true) {
+            _selectedDeviceName.value = devices.firstOrNull()?.name
         }
 
         if (activePollingDeviceName != null) {

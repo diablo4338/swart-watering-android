@@ -52,6 +52,7 @@ import com.smartwatering.app.data.OperationType
 import com.smartwatering.app.data.PlannedWatering
 import com.smartwatering.app.data.RawDeviceStatus
 import com.smartwatering.app.data.WateringStatus
+import com.smartwatering.app.data.WateringParameters
 import com.smartwatering.app.data.WaterConsumptionDay
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -192,6 +193,7 @@ fun DevicesScreen(viewModel: MainViewModel) {
     val devices by viewModel.devices.collectAsState()
     val selectedDeviceName by viewModel.selectedDeviceName.collectAsState()
     val deviceStates by viewModel.deviceStates.collectAsState()
+    val wateringParameters by viewModel.wateringParameters.collectAsState()
     val wateringHistory by viewModel.wateringHistory.collectAsState()
     val isDevicesLoading by viewModel.isDevicesLoading.collectAsState()
     val globalError by viewModel.error.collectAsState()
@@ -280,6 +282,11 @@ fun DevicesScreen(viewModel: MainViewModel) {
                         DevicePage(
                             device = device,
                             uiState = uiState,
+                            wateringParameters = wateringParameters[device.name],
+                            onLoadWateringParameters = { viewModel.loadWateringParameters(device) },
+                            onSaveWateringParameters = { dry, wet, threshold ->
+                                viewModel.saveWateringParameters(device, dry, wet, threshold)
+                            },
                             onStartWatering = { grams -> viewModel.startWatering(device, grams) },
                             onStopWatering = { viewModel.stopWatering(device) },
                             onOpenControl = { viewModel.openDeviceControl(device) },
@@ -404,15 +411,125 @@ private fun VersionInfoContent(
     }
 }
 
+private fun parameterDate(epochSeconds: Double?): String = epochSeconds?.let {
+    SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date((it * 1000).toLong()))
+} ?: "Never updated"
+
+private fun weightAboveWateringThresholdG(
+    grossWeightG: Double?,
+    dryWeightG: Int?,
+    wetWeightG: Int?,
+    waterLossPercent: Int?,
+): Int? {
+    if (
+        grossWeightG == null || dryWeightG == null || wetWeightG == null ||
+        waterLossPercent == null || wetWeightG <= dryWeightG || waterLossPercent !in 0..100
+    ) {
+        return null
+    }
+    return (
+        grossWeightG -
+            (wetWeightG - dryWeightG) * (100 - waterLossPercent) / 100.0
+        ).roundToInt()
+}
+
+@Composable
+private fun WateringParametersDialog(
+    grossWeightG: Double?,
+    parameters: WateringParameters?,
+    onLoad: () -> Unit,
+    onSave: (Int?, Int?, Int?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var dry by remember { mutableStateOf("") }
+    var wet by remember { mutableStateOf("") }
+    var threshold by remember { mutableStateOf("") }
+    var dryDirty by remember { mutableStateOf(false) }
+    var wetDirty by remember { mutableStateOf(false) }
+    var thresholdDirty by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { onLoad() }
+    LaunchedEffect(parameters) {
+        parameters ?: return@LaunchedEffect
+        if (!dryDirty) dry = parameters.dryWeightG?.toString() ?: ""
+        if (!wetDirty) wet = parameters.wetWeightG?.toString() ?: ""
+        if (!thresholdDirty) threshold = parameters.wateringLossThresholdPercent?.toString() ?: ""
+    }
+    val dryValue = dry.toIntOrNull()
+    val wetValue = wet.toIntOrNull()
+    val thresholdValue = threshold.toIntOrNull()
+    val hasChanges = dryDirty || wetDirty || thresholdDirty
+    val changedValuesAreValid =
+        (!dryDirty || dryValue != null && dryValue >= 0) &&
+        (!wetDirty || wetValue != null && wetValue >= 0) &&
+        (!thresholdDirty || thresholdValue != null && thresholdValue in 0..100)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Watering parameters") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = grossWeightG?.roundToInt()?.toString() ?: "No data",
+                    onValueChange = {}, readOnly = true, label = { Text("Raw weight (gross), g") },
+                )
+                OutlinedTextField(
+                    value = dry, onValueChange = { dry = it; dryDirty = true }, label = { Text("Dry weight, g") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Text("Updated: ${parameterDate(parameters?.dryWeightUpdatedAt)}", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = wet, onValueChange = { wet = it; wetDirty = true }, label = { Text("Wet weight, g") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Text("Updated: ${parameterDate(parameters?.wetWeightUpdatedAt)}", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = threshold, onValueChange = { threshold = it; thresholdDirty = true },
+                    label = { Text("Water loss threshold, %") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = hasChanges && changedValuesAreValid,
+                onClick = {
+                    onSave(
+                        dryValue.takeIf { dryDirty },
+                        wetValue.takeIf { wetDirty },
+                        thresholdValue.takeIf { thresholdDirty },
+                    )
+                    onDismiss()
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 @Composable
 fun DevicePage(
     device: Device,
     uiState: DeviceUIState,
+    wateringParameters: WateringParameters?,
+    onLoadWateringParameters: () -> Unit,
+    onSaveWateringParameters: (Int?, Int?, Int?) -> Unit,
     onStartWatering: (Double) -> Unit,
     onStopWatering: () -> Unit,
     onOpenControl: () -> Unit,
     onOpenDetectedWaterings: () -> Unit
 ) {
+    var showWateringParameters by remember(device.name) { mutableStateOf(false) }
+    LaunchedEffect(device.name, device.type) {
+        if (device.type == DeviceType.PLANT.apiValue) onLoadWateringParameters()
+    }
+    if (showWateringParameters) {
+        WateringParametersDialog(
+            grossWeightG = uiState.latestStatus?.result?.weight?.grossWeightG,
+            parameters = wateringParameters,
+            onLoad = onLoadWateringParameters,
+            onSave = onSaveWateringParameters,
+            onDismiss = { showWateringParameters = false },
+        )
+    }
     Card(
         modifier = Modifier
             .fillMaxSize()
@@ -446,11 +563,40 @@ fun DevicePage(
             }
             if (device.type == DeviceType.PLANT.apiValue) {
                 OutlinedButton(
+                    onClick = { showWateringParameters = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Watering parameters")
+                }
+                OutlinedButton(
                     onClick = onOpenDetectedWaterings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Watering history")
                 }
+                val weightAboveThreshold = weightAboveWateringThresholdG(
+                    grossWeightG = uiState.latestStatus?.result?.weight?.grossWeightG,
+                    dryWeightG = wateringParameters?.dryWeightG,
+                    wetWeightG = wateringParameters?.wetWeightG,
+                    waterLossPercent = wateringParameters?.wateringLossThresholdPercent,
+                )
+                Text(
+                    text = weightAboveThreshold?.let { "$it g" } ?: "—",
+                    modifier = Modifier.padding(top = 14.dp),
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 64.sp,
+                    color = when {
+                        weightAboveThreshold == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        weightAboveThreshold > 50 -> Color(0xFF2E7D32)
+                        else -> MaterialTheme.colorScheme.error
+                    },
+                )
+                Text(
+                    text = "Weight above watering threshold",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (uiState.hasPendingControlOperations) {
                 Text(
@@ -463,7 +609,6 @@ fun DevicePage(
             Spacer(modifier = Modifier.height(12.dp))
 
             if (device.type == DeviceType.PLANT.apiValue) {
-                PlantContent(uiState.latestStatus?.result)
                 SnapshotLabel(uiState.latestStatus)
                 WaterConsumptionBlock(uiState.waterConsumption)
             } else {
@@ -705,7 +850,6 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
     val pendingCalibrationOperation = control.pendingOperations.firstOrNull { it.type == OperationType.SCALE_CALIBRATION.apiValue }
     val actualName = pendingConfigOperation?.name ?: confirmedConfig?.name ?: raw?.device?.name ?: device.name
     val actualType = pendingConfigOperation?.deviceType ?: confirmedConfig?.deviceType ?: raw?.device?.type ?: device.type
-    val actualDryWeight = pendingConfigOperation?.dryWeightG ?: confirmedConfig?.dryWeightG ?: config?.dryWeightG
     val actualTareWeight = pendingConfigOperation?.tareWeightG ?: confirmedConfig?.tareWeightG ?: config?.tareWeightG
     val actualSleepMinutes = pendingSleepIntervalOperation?.minutes ?: confirmedSleepInterval?.minutes ?: config?.sleepIntervalMin
     val effectiveSleepOperation = pendingSleepOperation ?: confirmedSleep
@@ -717,7 +861,6 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
 
     var name by remember(device.name) { mutableStateOf(actualName) }
     var type by remember(device.name) { mutableStateOf(actualType) }
-    var dryWeight by remember(device.name) { mutableStateOf(actualDryWeight?.roundToInt()?.toString() ?: "") }
     var tareWeight by remember(device.name) { mutableStateOf(actualTareWeight?.roundToInt()?.toString() ?: "") }
     var sleepMinutes by remember(device.name) { mutableStateOf(actualSleepMinutes?.toString() ?: "") }
     var calibrationWeight by remember(device.name) { mutableStateOf("") }
@@ -729,7 +872,6 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
         if (!configDirty) {
             name = actualName
             type = actualType
-            dryWeight = actualDryWeight?.roundToInt()?.toString() ?: ""
             tareWeight = actualTareWeight?.roundToInt()?.toString() ?: ""
         }
         if (!sleepIntervalDirty) {
@@ -784,14 +926,12 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 onValueChange = { type = it; configDirty = true },
                 pending = pendingValue { it.deviceType }
             )
-            ControlField(dryWeight, { dryWeight = it; configDirty = true }, "Dry weight (g)", pendingValue { it.dryWeightG }, true)
             ControlField(tareWeight, { tareWeight = it; configDirty = true }, "Tare weight (g)", pendingValue { it.tareWeightG }, true)
             Button(
                 onClick = {
-                    val dry = dryWeight.toIntOrNull() ?: return@Button
                     val tare = tareWeight.toIntOrNull() ?: return@Button
                     configDirty = false
-                    viewModel.updateDeviceConfig(device, type, name, dry, tare)
+                    viewModel.updateDeviceConfig(device, type, name, tare)
                 },
                 enabled = name.isNotBlank() && type in deviceTypes,
                 modifier = Modifier.fillMaxWidth()
@@ -1034,30 +1174,6 @@ private fun formatSnapshotReceivedAt(epochSeconds: Double): String {
         && snapshotDay.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
     val pattern = if (isToday) "HH:mm:ss" else "EEE, dd.MM.yyyy HH:mm:ss"
     return SimpleDateFormat(pattern, Locale.getDefault()).format(timestamp)
-}
-
-@Composable
-fun PlantContent(rawStatus: RawDeviceStatus?) {
-    if (rawStatus != null) {
-        Text("Gross Weight: ${rawStatus.weight?.grossWeightG ?: "N/A"} g", style = MaterialTheme.typography.bodyLarge)
-        Text("Dry Weight: ${rawStatus.config?.dryWeightG ?: "N/A"} g", style = MaterialTheme.typography.bodyLarge)
-
-        val gross = rawStatus.weight?.grossWeightG
-        val dry = rawStatus.config?.dryWeightG
-        if (gross != null && dry != null) {
-            val diff = gross - dry
-            Spacer(modifier = Modifier.height(32.dp))
-            Text("Weight Difference:", style = MaterialTheme.typography.labelLarge)
-            Text(
-                text = "${diff.toInt()} g",
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.Black,
-                color = if (diff < 50.0) Color.Red else Color(0xFF4CAF50)
-            )
-        }
-    } else {
-        Text("No data available", style = MaterialTheme.typography.bodyMedium)
-    }
 }
 
 @Composable
