@@ -1,9 +1,6 @@
 name: Android release
 
 on:
-  push:
-    branches: [master]
-    tags: ['app-v*']
   workflow_dispatch:
     inputs:
       publish:
