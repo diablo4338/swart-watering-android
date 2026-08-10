@@ -436,6 +436,7 @@ private fun weightAboveWateringThresholdG(
 @Composable
 private fun WateringParametersDialog(
     grossWeightG: Double?,
+    controllerDryWeightG: Double?,
     parameters: WateringParameters?,
     onLoad: () -> Unit,
     onSave: (Int?, Int?, Int?) -> Unit,
@@ -448,11 +449,14 @@ private fun WateringParametersDialog(
     var wetDirty by remember { mutableStateOf(false) }
     var thresholdDirty by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { onLoad() }
-    LaunchedEffect(parameters) {
-        parameters ?: return@LaunchedEffect
-        if (!dryDirty) dry = parameters.dryWeightG?.toString() ?: ""
-        if (!wetDirty) wet = parameters.wetWeightG?.toString() ?: ""
-        if (!thresholdDirty) threshold = parameters.wateringLossThresholdPercent?.toString() ?: ""
+    LaunchedEffect(parameters, controllerDryWeightG) {
+        if (!dryDirty) {
+            dry = parameters?.dryWeightG?.toString()
+                ?: controllerDryWeightG?.roundToInt()?.toString()
+                ?: ""
+        }
+        if (!wetDirty) wet = parameters?.wetWeightG?.toString() ?: ""
+        if (!thresholdDirty) threshold = parameters?.wateringLossThresholdPercent?.toString() ?: ""
     }
     val dryValue = dry.toIntOrNull()
     val wetValue = wet.toIntOrNull()
@@ -524,6 +528,7 @@ fun DevicePage(
     if (showWateringParameters) {
         WateringParametersDialog(
             grossWeightG = uiState.latestStatus?.result?.weight?.grossWeightG,
+            controllerDryWeightG = uiState.latestStatus?.result?.config?.dryWeightG,
             parameters = wateringParameters,
             onLoad = onLoadWateringParameters,
             onSave = onSaveWateringParameters,
@@ -576,7 +581,8 @@ fun DevicePage(
                 }
                 val weightAboveThreshold = weightAboveWateringThresholdG(
                     grossWeightG = uiState.latestStatus?.result?.weight?.grossWeightG,
-                    dryWeightG = wateringParameters?.dryWeightG,
+                    dryWeightG = wateringParameters?.dryWeightG
+                        ?: uiState.latestStatus?.result?.config?.dryWeightG?.roundToInt(),
                     wetWeightG = wateringParameters?.wetWeightG,
                     waterLossPercent = wateringParameters?.wateringLossThresholdPercent,
                 )
