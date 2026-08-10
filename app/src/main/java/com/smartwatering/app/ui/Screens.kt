@@ -428,9 +428,48 @@ private fun weightAboveWateringThresholdG(
         return null
     }
     return (
-        grossWeightG -
-            (wetWeightG - dryWeightG) * (100 - waterLossPercent) / 100.0
+        grossWeightG - dryWeightG -
+            (wetWeightG - dryWeightG) * waterLossPercent / 100.0
         ).roundToInt()
+}
+
+@Composable
+private fun HoldToConfirmButton(
+    label: String,
+    enabled: Boolean,
+    onConfirmed: () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    Surface(
+        color = if (enabled) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .pointerInput(enabled, onConfirmed) {
+                detectTapGestures(
+                    onPress = {
+                        if (!enabled) {
+                            tryAwaitRelease()
+                            return@detectTapGestures
+                        }
+                        val confirmationJob = coroutineScope.launch {
+                            delay(3.seconds)
+                            onConfirmed()
+                        }
+                        tryAwaitRelease()
+                        confirmationJob.cancel()
+                    }
+                )
+            }
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text("Hold 3 sec: $label", fontWeight = FontWeight.Medium)
+        }
+    }
 }
 
 @Composable
@@ -932,14 +971,24 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 onValueChange = { type = it; configDirty = true },
                 pending = pendingValue { it.deviceType }
             )
-            ControlField(tareWeight, { tareWeight = it; configDirty = true }, "Tare weight (g)", pendingValue { it.tareWeightG }, true)
+            if (type != DeviceType.PLANT.apiValue) {
+                ControlField(
+                    tareWeight,
+                    { tareWeight = it; configDirty = true },
+                    "Tare weight (g)",
+                    pendingValue { it.tareWeightG },
+                    true
+                )
+            }
             Button(
                 onClick = {
-                    val tare = tareWeight.toIntOrNull() ?: return@Button
+                    val tare = tareWeight.toIntOrNull()
+                    if (type != DeviceType.PLANT.apiValue && tare == null) return@Button
                     configDirty = false
                     viewModel.updateDeviceConfig(device, type, name, tare)
                 },
-                enabled = name.isNotBlank() && type in deviceTypes,
+                enabled = name.isNotBlank() && type in deviceTypes &&
+                    (type == DeviceType.PLANT.apiValue || tareWeight.toIntOrNull() != null),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Save parameters") }
             PendingCommandMarker(pendingConfigOperation, "Parameters")
@@ -1001,11 +1050,11 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
 
             HorizontalDivider()
             Text("Scale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            OutlinedButton(
-                onClick = { viewModel.captureZero(device) },
+            HoldToConfirmButton(
+                label = "Set zero",
                 enabled = true,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Set zero") }
+                onConfirmed = { viewModel.captureZero(device) },
+            )
             PendingCommandMarker(pendingZeroOperation, "Set zero")
             ControlField(
                 calibrationWeight,
@@ -1014,16 +1063,16 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 pendingValue { it.weightG },
                 true
             )
-            Button(
-                onClick = {
+            HoldToConfirmButton(
+                label = "Calibrate",
+                onConfirmed = {
                     calibrationWeight.toIntOrNull()?.let {
                         calibrationDirty = false
                         viewModel.calibrate(device, it.toDouble())
                     }
                 },
                 enabled = (calibrationWeight.toIntOrNull() ?: 0) > 0,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Calibrate") }
+            )
             PendingCommandMarker(pendingCalibrationOperation, "Calibration")
 
             HorizontalDivider()

@@ -649,7 +649,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         device: Device,
         deviceType: String,
         name: String,
-        tareWeightG: Int
+        tareWeightG: Int?
     ) = runControlCommand(device, "Configuration command queued") {
         Repository.api.updateConfig(
             device.name,

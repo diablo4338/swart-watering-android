@@ -170,7 +170,7 @@ data class DeviceConfigRequest(
     @param:Json(name = "device_type") val deviceType: String,
     val name: String,
     @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
-    @param:Json(name = "tare_weight_g") val tareWeightG: Int
+    @param:Json(name = "tare_weight_g") val tareWeightG: Int? = null
 )
 
 @JsonClass(generateAdapter = true)
