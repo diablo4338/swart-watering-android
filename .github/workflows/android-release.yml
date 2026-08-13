@@ -38,6 +38,7 @@ jobs:
         run: |
           docker buildx build \
             --file docker/Dockerfile.apk \
+            --platform linux/amd64 \
             --target verify \
             .
 
@@ -110,6 +111,7 @@ jobs:
           set +a
           docker buildx build \
             --file docker/Dockerfile.apk \
+            --platform linux/amd64 \
             --target artifact \
             --output type=local,dest=build/apk \
             --build-arg VERSION_NAME="$VERSION_NAME" \
