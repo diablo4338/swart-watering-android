@@ -11,10 +11,20 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+enum class BackendAvailability {
+    AVAILABLE,
+    UNAVAILABLE,
+}
 
 object Repository {
     private var token: String? = null
     val baseUrl: String = normalizeBaseUrl()
+
+    private val _backendAvailability = MutableStateFlow(BackendAvailability.AVAILABLE)
+    val backendAvailability: StateFlow<BackendAvailability> = _backendAvailability
 
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
@@ -45,6 +55,16 @@ object Repository {
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
         .addInterceptor(authInterceptor)
+        .addInterceptor(IdempotencyInterceptor())
+        .addInterceptor(
+            RetryInterceptor { available ->
+                _backendAvailability.value = if (available) {
+                    BackendAvailability.AVAILABLE
+                } else {
+                    BackendAvailability.UNAVAILABLE
+                }
+            }
+        )
         .addInterceptor(loggingInterceptor)
         .build()
 

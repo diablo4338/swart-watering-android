@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -87,6 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val DEVICE_LIST_POLL_INTERVAL_MS = 10000L
         const val WATERING_HISTORY_POLL_INTERVAL_MS = 30000L
         const val WATER_CONSUMPTION_POLL_INTERVAL_MS = 300000L
+        const val BACKEND_RECOVERY_POLL_INTERVAL_MS = 15000L
         const val NO_DEVICES_ERROR = "No registered devices returned by the API."
         const val DEVICES_LOAD_ERROR_PREFIX = "Failed to load devices:"
     }
@@ -140,6 +142,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _appReleaseError = MutableStateFlow<String?>(null)
     val appReleaseError: StateFlow<String?> = _appReleaseError
 
+    val backendAvailability: StateFlow<BackendAvailability> = Repository.backendAvailability
+
     private val operationJobs = mutableMapOf<String, Job>()
     private val statusRequestMutexes = mutableMapOf<String, Mutex>()
     private val statusRefreshJobs = mutableMapOf<String, Job>()
@@ -183,6 +187,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clearLegacyPlaintextPrefs(application)
         checkAutoLogin()
         refreshAppRelease()
+        monitorBackendRecovery()
+    }
+
+    private fun monitorBackendRecovery() {
+        viewModelScope.launch {
+            Repository.backendAvailability.collectLatest { availability ->
+                if (availability != BackendAvailability.UNAVAILABLE) return@collectLatest
+                while (Repository.backendAvailability.value == BackendAvailability.UNAVAILABLE) {
+                    delay(BACKEND_RECOVERY_POLL_INTERVAL_MS.milliseconds)
+                    probeBackend()
+                }
+            }
+        }
+    }
+
+    fun retryBackendConnection() {
+        viewModelScope.launch { probeBackend() }
+    }
+
+    private suspend fun probeBackend() {
+        runCatching { Repository.api.getLatestAppRelease() }
+        if (Repository.backendAvailability.value == BackendAvailability.AVAILABLE &&
+            _currentScreen.value !is Screen.Login
+        ) {
+            runCatching { refreshDevicesOnce() }
+        }
     }
 
     fun refreshAppRelease() {
