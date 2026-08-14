@@ -39,6 +39,9 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          name: smart-watering-android
+          keep-state: true
 
       - name: Build debug APK
         if: env.PUBLISH_RELEASE != 'true'
