@@ -2,12 +2,6 @@ name: Android release
 
 on:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish the built version
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: smart-watering-android-release-publish
@@ -21,7 +15,6 @@ jobs:
     runs-on: [self-hosted]
     environment: dev
     env:
-      PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
       PUBLIC_API_BASE_URL: ${{ vars.PUBLIC_API_BASE_URL }}
       RELEASES_DIR: ${{ vars.RELEASES_DIR }}
       SIGNING_DIR: ${{ vars.SIGNING_DIR }}
@@ -43,18 +36,7 @@ jobs:
           name: smart-watering-android
           keep-state: true
 
-      - name: Build debug APK
-        if: env.PUBLISH_RELEASE != 'true'
-        shell: bash
-        run: |
-          docker buildx build \
-            --file docker/Dockerfile.apk \
-            --platform linux/amd64 \
-            --target verify \
-            .
-
       - name: Resolve version
-        if: env.PUBLISH_RELEASE == 'true'
         shell: bash
         run: |
           : "${PUBLIC_API_BASE_URL:?Set PUBLIC_API_BASE_URL in the dev environment}"
@@ -114,7 +96,6 @@ jobs:
           echo "PUBLISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - name: Build signed APK in Docker
-        if: env.PUBLISH_RELEASE == 'true'
         shell: bash
         run: |
           set -a
@@ -137,14 +118,12 @@ jobs:
             .
 
       - uses: actions/upload-artifact@v7
-        if: env.PUBLISH_RELEASE == 'true'
         with:
           name: smart-watering-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}
           path: build/apk/releases
           if-no-files-found: error
 
       - name: Publish release atomically
-        if: env.PUBLISH_RELEASE == 'true'
         shell: bash
         run: |
           staging="$RELEASES_DIR/.incoming-$VERSION_CODE"

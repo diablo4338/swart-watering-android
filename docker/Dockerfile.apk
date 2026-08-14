@@ -4,13 +4,6 @@ FROM ghcr.io/cirruslabs/android-sdk:35 AS source
 WORKDIR /workspace
 COPY . ./
 
-FROM source AS verify
-
-RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
-    --mount=type=cache,target=/workspace/.gradle,sharing=locked \
-    chmod +x gradlew && \
-    ./gradlew --no-daemon --console=plain :app:assembleDebug
-
 FROM source AS build
 
 ARG VERSION_NAME
