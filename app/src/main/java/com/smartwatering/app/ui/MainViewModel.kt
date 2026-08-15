@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import retrofit2.HttpException
+import java.io.IOException
 import java.net.SocketTimeoutException
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -89,7 +90,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val WATERING_HISTORY_POLL_INTERVAL_MS = 30000L
         const val WATER_CONSUMPTION_POLL_INTERVAL_MS = 300000L
         const val BACKEND_RECOVERY_POLL_INTERVAL_MS = 15000L
-        const val NO_DEVICES_ERROR = "No registered devices returned by the API."
         const val DEVICES_LOAD_ERROR_PREFIX = "Failed to load devices:"
     }
 
@@ -368,17 +368,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 refreshDevicesOnce()
             } catch (e: Exception) {
                 handleApiError(e)
-                if (e !is HttpException || e.code() != 401) {
+                if (!isBackendUnavailableError(e) && (e !is HttpException || e.code() != 401)) {
                     _error.value = "$DEVICES_LOAD_ERROR_PREFIX ${readableError(e)}"
                 }
             } finally {
                 _isDevicesLoading.value = false
             }
         }
-    }
-
-    fun retryFetchDevices() {
-        fetchDevices()
     }
 
     fun openDeviceControl(device: Device) {
@@ -728,12 +724,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
-        if (response.devices.isEmpty()) {
-            _error.value = NO_DEVICES_ERROR
-        } else if (
-            _error.value == NO_DEVICES_ERROR ||
-            _error.value?.startsWith(DEVICES_LOAD_ERROR_PREFIX) == true
-        ) {
+        if (_error.value?.startsWith(DEVICES_LOAD_ERROR_PREFIX) == true) {
             _error.value = null
         }
 
@@ -1356,6 +1347,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (current is TimeoutCancellationException || current is SocketTimeoutException) {
                 return true
             }
+            current = current.cause
+        }
+        return false
+    }
+
+    private fun isBackendUnavailableError(error: Throwable): Boolean {
+        if (error is HttpException && error.code() in 500..599) return true
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is IOException || current is TimeoutCancellationException) return true
             current = current.cause
         }
         return false

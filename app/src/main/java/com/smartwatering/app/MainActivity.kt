@@ -24,6 +24,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.seconds
 import com.smartwatering.app.ui.DevicesScreen
 import com.smartwatering.app.ui.DeviceControlScreen
 import com.smartwatering.app.ui.DetectedWateringHistoryScreen
@@ -64,11 +66,13 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(latestAppRelease?.versionCode) {
                     val release = latestAppRelease
                     if (release != null && release.versionCode > BuildConfig.VERSION_CODE) {
-                        val result = snackbarHostState.showSnackbar(
-                            message = "Доступна новая версия ${release.versionName}",
-                            actionLabel = "Скачать",
-                            withDismissAction = true,
-                        )
+                        val result = withTimeoutOrNull(3.seconds) {
+                            snackbarHostState.showSnackbar(
+                                message = "Доступна новая версия ${release.versionName}",
+                                actionLabel = "Скачать",
+                                withDismissAction = true,
+                            )
+                        }
                         if (result == SnackbarResult.ActionPerformed) {
                             runCatching {
                                 context.startActivity(

@@ -228,101 +228,81 @@ fun DevicesScreen(
         }
     ) { innerPadding ->
         if (devices.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(innerPadding).padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isDevicesLoading) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        globalError?.let {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = it,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = globalError ?: "No devices registered.",
-                            color = if (globalError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row {
-                            Button(onClick = { viewModel.retryFetchDevices() }) {
-                                Text("Retry")
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            OutlinedButton(onClick = { viewModel.logout() }) {
-                                Text("Logout")
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            val initialPage = devices.indexOfFirst { it.name == selectedDeviceName }.coerceAtLeast(0)
-            val pagerState = rememberPagerState(
-                initialPage = initialPage,
-                pageCount = { devices.size + 1 }
-            )
-            LaunchedEffect(pagerState.currentPage, devices) {
-                viewModel.setActiveDevice(devices.getOrNull(pagerState.currentPage))
-            }
             Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                if (globalError != null) {
-                    Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                        run {
-                            Text(
-                                text = globalError!!,
-                                modifier = Modifier.padding(8.dp).fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
-                }
-
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.weight(1f),
-                    key = { page -> if (page < devices.size) devices[page].name else "watering-history" }
-                ) { page ->
-                    if (page < devices.size) {
-                        val device = devices[page]
-                        val uiState = deviceStates[device.name] ?: DeviceUIState()
-                        DevicePage(
-                            device = device,
-                            uiState = uiState,
-                            wateringParameters = wateringParameters[device.name],
-                            onLoadWateringParameters = { viewModel.loadWateringParameters(device) },
-                            onSaveWateringParameters = { dry, wet, threshold ->
-                                viewModel.saveWateringParameters(device, dry, wet, threshold)
-                            },
-                            onStartWatering = { grams -> viewModel.startWatering(device, grams) },
-                            onStopWatering = { viewModel.stopWatering(device) },
-                            onOpenControl = { viewModel.openDeviceControl(device) },
-                            onOpenDetectedWaterings = {
-                                viewModel.openDetectedWateringHistory(device)
-                            }
-                        )
-                    } else {
-                        WateringHistoryPage(
-                            historyState = wateringHistory,
-                            onSuccessfulOnlyChange = { viewModel.setWateringHistorySuccessfulOnly(it) }
-                        )
-                    }
+                Box(modifier = Modifier.weight(1f)) {
+                    WateringHistoryPage(
+                        historyState = wateringHistory,
+                        suppressEmptyState = isDevicesLoading || showBackendUnavailable,
+                        onSuccessfulOnlyChange = { viewModel.setWateringHistorySuccessfulOnly(it) },
+                    )
                 }
                 Text(
-                    text = "${pagerState.currentPage + 1} / ${devices.size + 1}",
+                    text = "1 / 1",
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            return@Scaffold
+        }
+
+        val initialPage = devices.indexOfFirst { it.name == selectedDeviceName }.coerceAtLeast(0)
+        val pagerState = rememberPagerState(
+            initialPage = initialPage,
+            pageCount = { devices.size + 1 }
+        )
+        LaunchedEffect(pagerState.currentPage, devices) {
+            viewModel.setActiveDevice(devices.getOrNull(pagerState.currentPage))
+        }
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            if (globalError != null && !showBackendUnavailable) {
+                Surface(color = MaterialTheme.colorScheme.errorContainer) {
+                    run {
+                        Text(
+                            text = globalError!!,
+                            modifier = Modifier.padding(8.dp).fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f),
+                key = { page -> if (page < devices.size) devices[page].name else "watering-history" }
+            ) { page ->
+                if (page < devices.size) {
+                    val device = devices[page]
+                    val uiState = deviceStates[device.name] ?: DeviceUIState()
+                    DevicePage(
+                        device = device,
+                        uiState = uiState,
+                        wateringParameters = wateringParameters[device.name],
+                        onLoadWateringParameters = { viewModel.loadWateringParameters(device) },
+                        onSaveWateringParameters = { dry, wet, threshold ->
+                            viewModel.saveWateringParameters(device, dry, wet, threshold)
+                        },
+                        onStartWatering = { grams -> viewModel.startWatering(device, grams) },
+                        onStopWatering = { viewModel.stopWatering(device) },
+                        onOpenControl = { viewModel.openDeviceControl(device) },
+                        onOpenDetectedWaterings = {
+                            viewModel.openDetectedWateringHistory(device)
+                        }
+                    )
+                } else {
+                    WateringHistoryPage(
+                        historyState = wateringHistory,
+                        suppressEmptyState = showBackendUnavailable,
+                        onSuccessfulOnlyChange = { viewModel.setWateringHistorySuccessfulOnly(it) }
+                    )
+                }
+            }
+            Text(
+                text = "${pagerState.currentPage + 1} / ${devices.size + 1}",
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(16.dp),
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
@@ -1537,6 +1517,7 @@ fun ControllerWateringStatus(state: String?) {
 @Composable
 fun WateringHistoryPage(
     historyState: WateringHistoryUiState,
+    suppressEmptyState: Boolean = false,
     onSuccessfulOnlyChange: (Boolean) -> Unit
 ) {
     Card(
@@ -1578,6 +1559,7 @@ fun WateringHistoryPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             when {
+                suppressEmptyState && historyState.operations.isEmpty() -> Unit
                 historyState.isLoading && historyState.operations.isEmpty() -> {
                     CircularProgressIndicator()
                 }
