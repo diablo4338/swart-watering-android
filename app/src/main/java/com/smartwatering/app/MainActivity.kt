@@ -6,19 +6,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -29,9 +22,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -59,26 +50,14 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val snackbarHostState = remember { SnackbarHostState() }
                 val lifecycleOwner = LocalLifecycleOwner.current
-                var backendWasUnavailable by remember { mutableStateOf(false) }
                 var showBackendUnavailable by remember { mutableStateOf(false) }
 
                 LaunchedEffect(backendAvailability) {
+                    showBackendUnavailable = false
                     if (backendAvailability == BackendAvailability.UNAVAILABLE) {
-                        // The interceptor reports UNAVAILABLE only after all retries. A short
-                        // debounce also prevents a completed parallel request from flashing the banner.
-                        // Changing the LaunchedEffect key cancels this delay automatically.
+                        // Avoid flashing the indicator when a parallel request has already succeeded.
                         delay(500.milliseconds)
                         showBackendUnavailable = true
-                        backendWasUnavailable = true
-                    } else {
-                        showBackendUnavailable = false
-                        if (backendWasUnavailable) {
-                            backendWasUnavailable = false
-                            snackbarHostState.showSnackbar(
-                                message = "Соединение восстановлено. Данные обновляются.",
-                                withDismissAction = true,
-                            )
-                        }
                     }
                 }
 
@@ -116,43 +95,22 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                 ) { innerPadding ->
-                    Column(modifier = Modifier.padding(innerPadding)) {
-                        if (showBackendUnavailable) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = "Сервер не отвечает · данные не обновляются",
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 2,
-                                    )
-                                    TextButton(onClick = viewModel::retryBackendConnection) {
-                                        Text("Проверить", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                            }
-                        }
-                        Box(modifier = Modifier.weight(1f)) {
-                            when (currentScreen) {
-                                is Screen.Login -> LoginScreen(viewModel)
-                                is Screen.Devices -> DevicesScreen(viewModel)
-                                is Screen.DeviceControl -> DeviceControlScreen(
+                    Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                        when (currentScreen) {
+                            is Screen.Login -> LoginScreen(viewModel)
+                            is Screen.Devices -> DevicesScreen(
+                                viewModel = viewModel,
+                                showBackendUnavailable = showBackendUnavailable,
+                            )
+                            is Screen.DeviceControl -> DeviceControlScreen(
+                                viewModel,
+                                (currentScreen as Screen.DeviceControl).device
+                            )
+                            is Screen.DetectedWateringHistory ->
+                                DetectedWateringHistoryScreen(
                                     viewModel,
-                                    (currentScreen as Screen.DeviceControl).device
+                                    (currentScreen as Screen.DetectedWateringHistory).device
                                 )
-                                is Screen.DetectedWateringHistory ->
-                                    DetectedWateringHistoryScreen(
-                                        viewModel,
-                                        (currentScreen as Screen.DetectedWateringHistory).device
-                                    )
-                            }
                         }
                     }
                 }

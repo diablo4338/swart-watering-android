@@ -1,5 +1,12 @@
 # syntax=docker/dockerfile:1.7
-FROM ghcr.io/cirruslabs/android-sdk:35 AS source
+FROM ghcr.io/cirruslabs/android-sdk:35 AS toolchain
+
+# AGP 9.3 uses Build Tools 36 by default even though the app compiles against
+# API 35. Install it before copying sources so Docker builds and reuses this
+# layer instead of letting Gradle download it during every release build.
+RUN sdkmanager "build-tools;36.0.0"
+
+FROM toolchain AS source
 
 WORKDIR /workspace
 COPY . ./
@@ -16,8 +23,9 @@ RUN --mount=type=secret,id=release_keystore \
     --mount=type=secret,id=signing_store_password \
     --mount=type=secret,id=signing_key_password \
     --mount=type=secret,id=google_web_client_id \
-    --mount=type=cache,target=/root/.gradle,sharing=locked \
-    --mount=type=cache,target=/workspace/.gradle,sharing=locked \
+    --mount=type=cache,id=smart-watering-gradle-user-home,target=/root/.gradle,sharing=locked \
+    --mount=type=cache,id=smart-watering-gradle-project,target=/workspace/.gradle,sharing=locked \
+    --mount=type=cache,id=smart-watering-android-build,target=/workspace/app/build,sharing=locked \
     set -eu; \
     case "$VERSION_NAME" in *[!0-9A-Za-z.+-]*) exit 2;; esac; \
     case "$VERSION_CODE" in ''|*[!0-9]*) exit 2;; esac; \

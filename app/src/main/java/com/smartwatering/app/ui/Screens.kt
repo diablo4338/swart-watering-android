@@ -189,7 +189,10 @@ private fun credentialErrorMessage(e: GetCredentialException): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesScreen(viewModel: MainViewModel) {
+fun DevicesScreen(
+    viewModel: MainViewModel,
+    showBackendUnavailable: Boolean = false,
+) {
     val devices by viewModel.devices.collectAsState()
     val selectedDeviceName by viewModel.selectedDeviceName.collectAsState()
     val deviceStates by viewModel.deviceStates.collectAsState()
@@ -202,6 +205,19 @@ fun DevicesScreen(viewModel: MainViewModel) {
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Devices") },
+                navigationIcon = {
+                    if (showBackendUnavailable) {
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    }
+                },
                 actions = {
                     VersionInfoButton(viewModel)
                     IconButton(onClick = { viewModel.logout() }) {
