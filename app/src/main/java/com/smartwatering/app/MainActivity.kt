@@ -16,11 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
-import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
@@ -50,16 +46,8 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val snackbarHostState = remember { SnackbarHostState() }
                 val lifecycleOwner = LocalLifecycleOwner.current
-                var showBackendUnavailable by remember { mutableStateOf(false) }
-
-                LaunchedEffect(backendAvailability) {
-                    showBackendUnavailable = false
-                    if (backendAvailability == BackendAvailability.UNAVAILABLE) {
-                        // Avoid flashing the indicator when a parallel request has already succeeded.
-                        delay(500.milliseconds)
-                        showBackendUnavailable = true
-                    }
-                }
+                val showBackendUnavailable =
+                    backendAvailability == BackendAvailability.UNAVAILABLE
 
                 DisposableEffect(lifecycleOwner, backendAvailability) {
                     val observer = LifecycleEventObserver { _, event ->

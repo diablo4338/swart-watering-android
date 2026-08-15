@@ -4,78 +4,60 @@ import android.util.Log
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.concurrent.ThreadLocalRandom
-import kotlin.math.max
-import kotlin.math.min
+import java.util.concurrent.atomic.AtomicLong
 
 class RetryInterceptor(
-    private val maxAttempts: Int = 3,
-    private val baseDelayMs: Long = 500,
-    private val maxServerDelayMs: Long = 10_000,
+    private val retryDelaysMs: List<Long> = listOf(500L, 1_000L, 3_000L),
     private val onBackendAvailabilityChanged: (Boolean) -> Unit = {},
 ) : Interceptor {
     init {
-        require(maxAttempts >= 1) { "maxAttempts must be at least 1" }
-        require(baseDelayMs >= 0) { "baseDelayMs must not be negative" }
-        require(maxServerDelayMs >= 0) { "maxServerDelayMs must not be negative" }
+        require(retryDelaysMs.all { it >= 0 }) { "retry delays must not be negative" }
     }
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val canRetry = request.method == "GET" || request.header("Idempotency-Key") != null
-        if (!canRetry || isOperationStatusPoll(request.url.encodedPath)) {
-            return chain.proceed(request)
-        }
+        val requestId = requestSequence.incrementAndGet()
 
-        var attempt = 1
-        while (true) {
+        for (attempt in 0..retryDelaysMs.size) {
             try {
                 val response = chain.proceed(request)
-                if (response.code !in RETRYABLE_STATUS_CODES) {
-                    onBackendAvailabilityChanged(true)
+                if (response.code !in SERVER_ERROR_STATUS_CODES) {
+                    reportAvailability(requestId, true)
                     return response
                 }
-                if (attempt >= maxAttempts) {
-                    onBackendAvailabilityChanged(false)
+                if (attempt == retryDelaysMs.size) {
+                    reportAvailability(requestId, false)
                     return response
                 }
-                val delayMs = retryDelayMs(response, attempt)
-                logRetry(request.url.redact(), "HTTP ${response.code}", attempt, delayMs)
+                val delayMs = retryDelaysMs[attempt]
+                logRetry(request.url.redact(), "HTTP ${response.code}", attempt + 2, delayMs)
                 response.close()
                 sleepBeforeRetry(delayMs)
             } catch (error: IOException) {
-                if (attempt >= maxAttempts) {
-                    onBackendAvailabilityChanged(false)
+                if (attempt == retryDelaysMs.size) {
+                    reportAvailability(requestId, false)
                     throw error
                 }
-                val delayMs = defaultRetryDelayMs(attempt)
-                logRetry(request.url.redact(), error.javaClass.simpleName, attempt, delayMs)
+                val delayMs = retryDelaysMs[attempt]
+                logRetry(request.url.redact(), error.javaClass.simpleName, attempt + 2, delayMs)
                 sleepBeforeRetry(delayMs)
             }
-            attempt += 1
+        }
+        error("retry loop completed unexpectedly")
+    }
+
+    private fun reportAvailability(requestId: Long, available: Boolean) {
+        synchronized(availabilityLock) {
+            if (requestId <= lastReportedRequestId) return
+            lastReportedRequestId = requestId
+            onBackendAvailabilityChanged(available)
         }
     }
 
-    private fun retryDelayMs(response: Response, attempt: Int): Long {
-        parseRetryAfterMs(response.header("Retry-After"))?.let {
-            return min(it, maxServerDelayMs)
-        }
-
-        return defaultRetryDelayMs(attempt)
-    }
-
-    private fun defaultRetryDelayMs(attempt: Int): Long {
-        val exponentialDelay = baseDelayMs * (1L shl (attempt - 1))
-        val jitterBound = max(1, baseDelayMs / 2 + 1)
-        return exponentialDelay + ThreadLocalRandom.current().nextLong(jitterBound)
-    }
-
-    private fun logRetry(url: String, reason: String, attempt: Int, delayMs: Long) {
+    private fun logRetry(url: String, reason: String, nextAttempt: Int, delayMs: Long) {
         Log.w(
             TAG,
-            "Retrying $url after $reason; attempt=${attempt + 1}/$maxAttempts delay_ms=$delayMs",
+            "Retrying $url after $reason; attempt=$nextAttempt/${retryDelaysMs.size + 1} delay_ms=$delayMs",
         )
     }
 
@@ -89,30 +71,12 @@ class RetryInterceptor(
         }
     }
 
-    private fun parseRetryAfterMs(value: String?): Long? {
-        val retryAfter = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        retryAfter.toLongOrNull()?.let { seconds ->
-            return if (seconds >= 0) {
-                min(seconds, maxServerDelayMs / 1_000) * 1_000
-            } else {
-                null
-            }
-        }
-
-        return runCatching {
-            val retryAt = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME)
-                .toInstant()
-                .toEpochMilli()
-            max(0, retryAt - System.currentTimeMillis())
-        }.getOrNull()
-    }
-
-    private fun isOperationStatusPoll(path: String): Boolean =
-        OPERATION_STATUS_PATH.matches(path)
-
     private companion object {
         const val TAG = "WateringAPI"
-        val RETRYABLE_STATUS_CODES = setOf(502, 503, 504)
-        val OPERATION_STATUS_PATH = Regex("/api/v2/operations/[^/]+/?")
+        val SERVER_ERROR_STATUS_CODES = 500..599
     }
+
+    private val requestSequence = AtomicLong(0)
+    private val availabilityLock = Any()
+    private var lastReportedRequestId = 0L
 }
