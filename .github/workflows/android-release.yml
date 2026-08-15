@@ -28,12 +28,12 @@ jobs:
       # Android's Maven AAPT2 binary is x86_64-only. Keep the build container,
       # JVM, Kotlin and R8 native ARM64, and emulate only x86 Android tools.
       - name: Register x86 Android tool emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: amd64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         with:
           name: smart-watering-android
           keep-state: true
