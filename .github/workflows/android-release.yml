@@ -19,14 +19,15 @@ jobs:
       RELEASES_DIR: ${{ vars.RELEASES_DIR }}
       SIGNING_DIR: ${{ vars.SIGNING_DIR }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+      BUILD_PLATFORM: ${{ runner.arch == 'ARM64' && 'linux/arm64' || 'linux/amd64' }}
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      # Android's Maven AAPT2 binary is x86_64-only. Keep the build container,
-      # JVM, Kotlin and R8 native ARM64, and emulate only x86 Android tools.
+      # Android's Maven AAPT2 binary is x86_64-only. ARM64 runners emulate the
+      # x86 Android tools; x64 runners build natively to avoid nested emulation.
       - name: Register x86 Android tool emulation
         uses: docker/setup-qemu-action@v4
         with:
@@ -105,7 +106,7 @@ jobs:
           set +a
           docker buildx build \
             --file docker/Dockerfile.apk \
-            --platform linux/arm64 \
+            --platform "$BUILD_PLATFORM" \
             --target artifact \
             --output type=local,dest=build/apk \
             --build-arg VERSION_NAME="$VERSION_NAME" \
