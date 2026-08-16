@@ -19,7 +19,6 @@ jobs:
       RELEASES_DIR: ${{ vars.RELEASES_DIR }}
       SIGNING_DIR: ${{ vars.SIGNING_DIR }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
-      BUILD_PLATFORM: ${{ runner.arch == 'ARM64' && 'linux/arm64' || 'linux/amd64' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -100,6 +99,8 @@ jobs:
 
       - name: Build signed APK in Docker
         shell: bash
+        env:
+          BUILD_PLATFORM: ${{ runner.arch == 'ARM64' && 'linux/arm64' || 'linux/amd64' }}
         run: |
           set -a
           source "$SIGNING_DIR/release.env"
