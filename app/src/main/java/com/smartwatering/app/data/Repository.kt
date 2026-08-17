@@ -24,7 +24,10 @@ enum class BackendAvailability {
 }
 
 object Repository {
-    private var token: String? = null
+    @Volatile
+    private var primaryToken: String? = null
+    @Volatile
+    private var fallbackToken: String? = null
     val baseUrl: String = normalizeBaseUrl()
     private val fallbackBaseUrl: String? = normalizeBaseUrl(
         BuildConfig.SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL
@@ -40,7 +43,13 @@ object Repository {
         .build()
 
     private val authInterceptor = Interceptor { chain ->
-        val request = chain.request().newBuilder()
+        val originalRequest = chain.request()
+        val token = if (fallbackBaseUrl?.toHttpUrl()?.let { originalRequest.url.sameServer(it) } == true) {
+            fallbackToken
+        } else {
+            primaryToken
+        }
+        val request = originalRequest.newBuilder()
         token?.takeIf { it.isNotBlank() }?.let {
             request.addHeader("Authorization", "Bearer $it")
         }
@@ -73,9 +82,11 @@ object Repository {
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
-        .addInterceptor(authInterceptor)
         .addInterceptor(IdempotencyInterceptor())
         .addInterceptor(retryInterceptor)
+        // Routing happens in RetryInterceptor. Add auth afterwards so every retry/failover
+        // receives the token belonging to the server it is actually sent to.
+        .addInterceptor(authInterceptor)
         .addInterceptor(loggingInterceptor)
         .build()
 
@@ -88,7 +99,20 @@ object Repository {
     val api: ApiService = retrofit.create(ApiService::class.java)
 
     fun setToken(newToken: String?) {
-        token = newToken
+        if (_usingFallback.value) fallbackToken = newToken else primaryToken = newToken
+    }
+
+    fun restoreTokens(primary: String?, fallback: String?) {
+        primaryToken = primary
+        fallbackToken = fallback
+        if (primary.isNullOrBlank() && !fallback.isNullOrBlank()) retryInterceptor.useFallback()
+    }
+
+    fun hasPrimaryToken(): Boolean = !primaryToken.isNullOrBlank()
+
+    fun clearTokens() {
+        primaryToken = null
+        fallbackToken = null
     }
 
     suspend fun probePrimaryBackend(): Boolean = withContext(Dispatchers.IO) {
@@ -102,6 +126,7 @@ object Repository {
                 .execute()
                 .use { response ->
                     if (!response.isSuccessful) return@use false
+                    if (!hasPrimaryToken()) return@use false
                     retryInterceptor.markPrimaryAvailable()
                     _backendAvailability.value = BackendAvailability.AVAILABLE
                     true
@@ -119,4 +144,7 @@ object Repository {
     }
 
     private const val EMPTY_BASE_URL = "/"
+
+    private fun okhttp3.HttpUrl.sameServer(other: okhttp3.HttpUrl): Boolean =
+        scheme == other.scheme && host == other.host && port == other.port
 }

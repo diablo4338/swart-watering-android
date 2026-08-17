@@ -90,6 +90,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val WATER_CONSUMPTION_POLL_INTERVAL_MS = 300000L
         const val BACKEND_RECOVERY_POLL_INTERVAL_MS = 15000L
         const val DEVICES_LOAD_ERROR_PREFIX = "Failed to load devices:"
+        const val AUTH_TOKEN_PRIMARY = "auth_token_primary"
+        const val AUTH_EXPIRES_AT_PRIMARY = "auth_expires_at_primary"
+        const val AUTH_TOKEN_FALLBACK = "auth_token_fallback"
+        const val AUTH_EXPIRES_AT_FALLBACK = "auth_expires_at_fallback"
     }
 
     private val prefs = createSecurePrefs(application)
@@ -234,15 +238,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun checkAutoLogin() {
-        val savedToken = prefs.getString("auth_token", null)
-        val expiresAt = prefs.getLong("auth_expires_at", 0L)
-        if (savedToken != null && expiresAt > System.currentTimeMillis() / 1000L) {
-            Repository.setToken(savedToken)
+        val now = System.currentTimeMillis() / 1000L
+        // Treat the old unscoped session as primary during the one-time migration.
+        val primaryToken = prefs.getString(AUTH_TOKEN_PRIMARY, null)
+            ?: prefs.getString("auth_token", null)
+        val primaryExpiresAt = prefs.getLong(
+            AUTH_EXPIRES_AT_PRIMARY,
+            prefs.getLong("auth_expires_at", 0L),
+        )
+        val fallbackToken = prefs.getString(AUTH_TOKEN_FALLBACK, null)
+        val fallbackExpiresAt = prefs.getLong(AUTH_EXPIRES_AT_FALLBACK, 0L)
+        val validPrimaryToken = primaryToken?.takeIf { primaryExpiresAt > now }
+        val validFallbackToken = fallbackToken?.takeIf { fallbackExpiresAt > now }
+        if (validPrimaryToken != null || validFallbackToken != null) {
+            Repository.restoreTokens(validPrimaryToken, validFallbackToken)
+            prefs.edit {
+                remove("auth_token")
+                remove("auth_expires_at")
+                if (validPrimaryToken != null) {
+                    putString(AUTH_TOKEN_PRIMARY, validPrimaryToken)
+                    putLong(AUTH_EXPIRES_AT_PRIMARY, primaryExpiresAt)
+                } else {
+                    remove(AUTH_TOKEN_PRIMARY)
+                    remove(AUTH_EXPIRES_AT_PRIMARY)
+                }
+                if (validFallbackToken == null) {
+                    remove(AUTH_TOKEN_FALLBACK)
+                    remove(AUTH_EXPIRES_AT_FALLBACK)
+                }
+            }
             _currentScreen.value = Screen.Devices
             fetchDevices()
         } else {
             clearSession()
         }
+    }
+
+    private fun SharedPreferences.Editor.storeActiveSession(response: LoginResponse) {
+        if (Repository.usingFallback.value) {
+            putString(AUTH_TOKEN_FALLBACK, response.token)
+            putLong(AUTH_EXPIRES_AT_FALLBACK, response.expiresAt.toLong())
+        } else {
+            putString(AUTH_TOKEN_PRIMARY, response.token)
+            putLong(AUTH_EXPIRES_AT_PRIMARY, response.expiresAt.toLong())
+        }
+        remove("auth_token")
+        remove("auth_expires_at")
     }
 
     fun login(username: String, password: String) {
@@ -255,8 +296,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 prefs.edit().apply {
                     putString("saved_username", username)
-                    putString("auth_token", response.token)
-                    putLong("auth_expires_at", response.expiresAt.toLong())
+                    storeActiveSession(response)
                     apply()
                 }
                 _currentScreen.value = Screen.Devices
@@ -282,8 +322,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     performGoogleLogin(idToken)
                 }
                 prefs.edit().apply {
-                    putString("auth_token", response.token)
-                    putLong("auth_expires_at", response.expiresAt.toLong())
+                    storeActiveSession(response)
                     apply()
                 }
                 _currentScreen.value = Screen.Devices
@@ -324,10 +363,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().apply {
             remove("auth_token")
             remove("auth_expires_at")
+            remove(AUTH_TOKEN_PRIMARY)
+            remove(AUTH_EXPIRES_AT_PRIMARY)
+            remove(AUTH_TOKEN_FALLBACK)
+            remove(AUTH_EXPIRES_AT_FALLBACK)
             remove("saved_username")
             apply()
         }
-        Repository.setToken(null)
+        Repository.clearTokens()
         _currentScreen.value = Screen.Login
         _isLoading.value = false
         _isDevicesLoading.value = false
