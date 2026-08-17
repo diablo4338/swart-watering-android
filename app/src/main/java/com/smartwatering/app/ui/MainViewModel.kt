@@ -17,7 +17,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -192,10 +191,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun monitorBackendRecovery() {
         viewModelScope.launch {
-            Repository.backendAvailability.collectLatest { availability ->
-                if (availability != BackendAvailability.UNAVAILABLE) return@collectLatest
-                while (Repository.backendAvailability.value == BackendAvailability.UNAVAILABLE) {
-                    delay(BACKEND_RECOVERY_POLL_INTERVAL_MS.milliseconds)
+            while (true) {
+                delay(BACKEND_RECOVERY_POLL_INTERVAL_MS.milliseconds)
+                if (Repository.usingFallback.value) {
+                    if (Repository.probePrimaryBackend()) probeBackend()
+                } else if (Repository.backendAvailability.value == BackendAvailability.UNAVAILABLE) {
                     probeBackend()
                 }
             }

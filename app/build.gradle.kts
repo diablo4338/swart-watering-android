@@ -83,6 +83,17 @@ android {
             "SMART_WATERING_GOOGLE_WEB_CLIENT_ID",
             defaultValue = "",
         )
+        val fallbackBaseUrl = resolveBuildTypeValue(
+            name,
+            "SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL",
+            "SMART_WATERING_PUBLIC_API_FALLBACK_URL",
+            "",
+        )
+        buildType.buildConfigField(
+            "String",
+            "SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL",
+            escapedBuildConfigString(fallbackBaseUrl),
+        )
         buildType.buildConfigField(
             "String",
             "SMART_WATERING_PUBLIC_API_BASE_URL",

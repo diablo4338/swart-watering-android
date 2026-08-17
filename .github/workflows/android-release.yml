@@ -16,6 +16,7 @@ jobs:
     environment: dev
     env:
       PUBLIC_API_BASE_URL: ${{ vars.PUBLIC_API_BASE_URL }}
+      PUBLIC_API_FALLBACK_BASE_URL: ${{ vars.PUBLIC_API_FALLBACK_BASE_URL }}
       RELEASES_DIR: ${{ vars.RELEASES_DIR }}
       SIGNING_DIR: ${{ vars.SIGNING_DIR }}
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
@@ -113,6 +114,7 @@ jobs:
             --build-arg VERSION_NAME="$VERSION_NAME" \
             --build-arg VERSION_CODE="$VERSION_CODE" \
             --build-arg PUBLIC_API_BASE_URL="$PUBLIC_API_BASE_URL" \
+            --build-arg PUBLIC_API_FALLBACK_BASE_URL="$PUBLIC_API_FALLBACK_BASE_URL" \
             --build-arg GIT_COMMIT="$GITHUB_SHA" \
             --build-arg PUBLISHED_AT="$PUBLISHED_AT" \
             --secret id=release_keystore,src="$SIGNING_DIR/release.jks" \

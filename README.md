@@ -28,6 +28,7 @@ Set the URL for each build:
 
 ```dotenv
 SMART_WATERING_PUBLIC_API_BASE_URL=http://10.0.2.2:8081/
+SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL=http://10.0.2.3:8081/
 SMART_WATERING_GOOGLE_WEB_CLIENT_ID=
 ```
 
@@ -47,6 +48,8 @@ Supported keys:
 ```text
 SMART_WATERING_PUBLIC_API_BASE_URL
 SMART_WATERING_PUBLIC_API_URL
+SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL
+SMART_WATERING_PUBLIC_API_FALLBACK_URL
 SMART_WATERING_GOOGLE_WEB_CLIENT_ID
 ```
 
@@ -55,6 +58,8 @@ Build-type-specific override suffixes are also supported:
 ```text
 SMART_WATERING_PUBLIC_API_BASE_URL_DEBUG
 SMART_WATERING_PUBLIC_API_BASE_URL_RELEASE
+SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL_DEBUG
+SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL_RELEASE
 SMART_WATERING_GOOGLE_WEB_CLIENT_ID_DEBUG
 SMART_WATERING_GOOGLE_WEB_CLIENT_ID_RELEASE
 ```
@@ -100,6 +105,7 @@ runner publishes directly to a host directory mounted read-only by
 Configure the GitHub environment named `dev` with these variables:
 
 - `PUBLIC_API_BASE_URL` — public backend root URL, without `/api/v2`;
+- `PUBLIC_API_FALLBACK_BASE_URL` — optional reserve backend root URL, without `/api/v2`;
 - `RELEASES_DIR` — shared host directory, for example `/srv/smart-watering/releases`;
 - `SIGNING_DIR` — runner-only signing directory, for example
   `/var/lib/smart-watering-builder/signing`.
