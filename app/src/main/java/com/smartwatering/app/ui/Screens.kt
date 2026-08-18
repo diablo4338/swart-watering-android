@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -931,6 +932,9 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
     var sleepMinutes by remember(device.name) { mutableStateOf(actualSleepMinutes?.toString() ?: "") }
     var calibrationWeight by remember(device.name) { mutableStateOf("") }
     var configDirty by remember(device.name) { mutableStateOf(false) }
+    var nameAvailable by remember(device.name) { mutableStateOf<Boolean?>(true) }
+    var nameValidationError by remember(device.name) { mutableStateOf<String?>(null) }
+    var nameValidationInProgress by remember(device.name) { mutableStateOf(false) }
     var sleepIntervalDirty by remember(device.name) { mutableStateOf(false) }
     var calibrationDirty by remember(device.name) { mutableStateOf(false) }
 
@@ -985,7 +989,29 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Device parameters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            ControlField(name, { name = it; configDirty = true }, "Name", pendingValue { it.name })
+            ControlField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    configDirty = true
+                    nameAvailable = null
+                    nameValidationError = null
+                },
+                label = "Name",
+                pending = pendingValue { it.name },
+                error = nameValidationError,
+                onFocusLost = {
+                    val candidate = name.trim()
+                    nameValidationInProgress = true
+                    viewModel.validateDeviceName(device, candidate) { checkedName, available, error ->
+                        if (name.trim() == checkedName) {
+                            nameAvailable = available
+                            nameValidationError = error
+                            nameValidationInProgress = false
+                        }
+                    }
+                },
+            )
             DeviceTypeField(
                 value = type,
                 options = deviceTypes,
@@ -1008,7 +1034,8 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                     configDirty = false
                     viewModel.updateDeviceConfig(device, type, name, tare)
                 },
-                enabled = name.isNotBlank() && type in deviceTypes &&
+                enabled = name.isNotBlank() && nameAvailable == true &&
+                    !nameValidationInProgress && type in deviceTypes &&
                     (type == DeviceType.PLANT.apiValue || tareWeight.toIntOrNull() != null),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Save parameters") }
@@ -1146,22 +1173,37 @@ private fun ControlField(
     onValueChange: (String) -> Unit,
     label: String,
     pending: String?,
-    numeric: Boolean = false
+    numeric: Boolean = false,
+    error: String? = null,
+    onFocusLost: (() -> Unit)? = null,
 ) {
+    var hadFocus by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
+        isError = error != null,
         keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text),
         supportingText = {
-            if (pending == null) {
+            if (error != null) {
+                Text(error, color = MaterialTheme.colorScheme.error)
+            } else if (pending == null) {
                 Text(" ", style = MaterialTheme.typography.labelSmall)
             } else {
                 PendingValue(pending)
             }
         },
         singleLine = true,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { state ->
+                if (state.isFocused) {
+                    hadFocus = true
+                } else if (hadFocus) {
+                    hadFocus = false
+                    onFocusLost?.invoke()
+                }
+            }
     )
 }
 

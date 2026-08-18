@@ -108,6 +108,12 @@ data class SetFertilizedResponse(val id: Int, val fertilized: Boolean)
 data class DeviceTypesResponse(val types: List<String>)
 
 @JsonClass(generateAdapter = true)
+data class DeviceNameAvailabilityResponse(
+    val name: String,
+    val available: Boolean,
+)
+
+@JsonClass(generateAdapter = true)
 data class WateringParameters(
     val device: String,
     @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,

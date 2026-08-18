@@ -22,6 +22,12 @@ interface ApiService {
     @GET("api/v2/device-types")
     suspend fun getDeviceTypes(): DeviceTypesResponse
 
+    @GET("api/v2/device-name-availability")
+    suspend fun getDeviceNameAvailability(
+        @Query("name") name: String,
+        @Query("current_name") currentName: String
+    ): DeviceNameAvailabilityResponse
+
     @GET("api/v2/devices/{device}/watering-parameters")
     suspend fun getWateringParameters(@Path("device") deviceName: String): WateringParameters
 

@@ -157,7 +157,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val wateringHistoryCache = mutableMapOf<Boolean, List<OperationResponse>>()
     private var deviceListRefreshJob: Job? = null
     private var wateringHistoryRefreshJob: Job? = null
-    private var deviceTypesLoaded = false
     private var deviceControlRefreshJob: Job? = null
     private var activePollingDeviceName: String? = null
     private val controlOperationJobs = mutableMapOf<String, Job>()
@@ -457,12 +456,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadDeviceTypes() {
-        if (deviceTypesLoaded) return
         viewModelScope.launch {
             runCatching { Repository.api.getDeviceTypes().types }
                 .onSuccess { types ->
                     _deviceTypes.value = types
-                    deviceTypesLoaded = true
                 }
                 .onFailure { error ->
                     Log.d(TAG, "Device types load failed: ${error.message}", error)
@@ -772,6 +769,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             device.name,
             DeviceConfigRequest(deviceType, name, tareWeightG = tareWeightG)
         )
+    }
+
+    fun validateDeviceName(
+        device: Device,
+        candidate: String,
+        onResult: (checkedName: String, available: Boolean, error: String?) -> Unit,
+    ) {
+        val checkedName = candidate.trim()
+        if (checkedName.isEmpty()) {
+            onResult(checkedName, false, "Name must not be empty")
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                Repository.api.getDeviceNameAvailability(checkedName, device.name)
+            }.onSuccess { response ->
+                onResult(
+                    checkedName,
+                    response.available,
+                    if (response.available) null else "This device name is already in use",
+                )
+            }.onFailure { error ->
+                onResult(checkedName, false, "Name validation failed: ${readableError(error as Exception)}")
+            }
+        }
     }
 
     fun clearDeviceQueue(device: Device) {
