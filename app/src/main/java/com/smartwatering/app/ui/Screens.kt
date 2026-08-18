@@ -472,6 +472,8 @@ private fun HoldToConfirmButton(
 private fun WateringParametersDialog(
     grossWeightG: Double?,
     controllerDryWeightG: Double?,
+    controllerWetWeightG: Double?,
+    controllerWaterLossThresholdPercent: Double?,
     parameters: WateringParameters?,
     onLoad: () -> Unit,
     onSave: (Int?, Int?, Int?) -> Unit,
@@ -484,14 +486,27 @@ private fun WateringParametersDialog(
     var wetDirty by remember { mutableStateOf(false) }
     var thresholdDirty by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { onLoad() }
-    LaunchedEffect(parameters, controllerDryWeightG) {
+    LaunchedEffect(
+        parameters,
+        controllerDryWeightG,
+        controllerWetWeightG,
+        controllerWaterLossThresholdPercent,
+    ) {
         if (!dryDirty) {
             dry = parameters?.dryWeightG?.toString()
                 ?: controllerDryWeightG?.roundToInt()?.toString()
                 ?: ""
         }
-        if (!wetDirty) wet = parameters?.wetWeightG?.toString() ?: ""
-        if (!thresholdDirty) threshold = parameters?.wateringLossThresholdPercent?.toString() ?: ""
+        if (!wetDirty) {
+            wet = parameters?.wetWeightG?.toString()
+                ?: controllerWetWeightG?.roundToInt()?.toString()
+                ?: ""
+        }
+        if (!thresholdDirty) {
+            threshold = parameters?.wateringLossThresholdPercent?.toString()
+                ?: controllerWaterLossThresholdPercent?.roundToInt()?.toString()
+                ?: ""
+        }
     }
     val dryValue = dry.toIntOrNull()
     val wetValue = wet.toIntOrNull()
@@ -505,7 +520,10 @@ private fun WateringParametersDialog(
         onDismissRequest = onDismiss,
         title = { Text("Watering parameters") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(
                     value = grossWeightG?.roundToInt()?.toString() ?: "No data",
                     onValueChange = {}, readOnly = true, label = { Text("Raw weight (gross), g") },
@@ -564,6 +582,9 @@ fun DevicePage(
         WateringParametersDialog(
             grossWeightG = uiState.latestStatus?.result?.weight?.grossWeightG,
             controllerDryWeightG = uiState.latestStatus?.result?.config?.dryWeightG,
+            controllerWetWeightG = uiState.latestStatus?.result?.config?.wetWeightG,
+            controllerWaterLossThresholdPercent =
+                uiState.latestStatus?.result?.config?.wateringLossThresholdPercent,
             parameters = wateringParameters,
             onLoad = onLoadWateringParameters,
             onSave = onSaveWateringParameters,
