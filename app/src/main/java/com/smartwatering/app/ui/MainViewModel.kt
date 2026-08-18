@@ -157,6 +157,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val wateringHistoryCache = mutableMapOf<Boolean, List<OperationResponse>>()
     private var deviceListRefreshJob: Job? = null
     private var wateringHistoryRefreshJob: Job? = null
+    private var deviceTypesLoaded = false
     private var deviceControlRefreshJob: Job? = null
     private var activePollingDeviceName: String? = null
     private val controlOperationJobs = mutableMapOf<String, Job>()
@@ -451,7 +452,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedDeviceName.value = device.name
         _deviceControl.value = DeviceControlUiState()
         _currentScreen.value = Screen.DeviceControl(device)
+        loadDeviceTypes()
         refreshDeviceControl(device)
+    }
+
+    private fun loadDeviceTypes() {
+        if (deviceTypesLoaded) return
+        viewModelScope.launch {
+            runCatching { Repository.api.getDeviceTypes().types }
+                .onSuccess { types ->
+                    _deviceTypes.value = types
+                    deviceTypesLoaded = true
+                }
+                .onFailure { error ->
+                    Log.d(TAG, "Device types load failed: ${error.message}", error)
+                }
+        }
     }
 
     fun closeDeviceControl() {
@@ -782,9 +798,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val response = withTimeout(DEVICES_TIMEOUT_MS.milliseconds) {
             Repository.api.getDevices()
         }
-        _deviceTypes.value = runCatching {
-            Repository.api.getDeviceTypes().types
-        }.getOrDefault(DeviceType.entries.map { it.apiValue })
         val oldDeviceNames = _devices.value.map { it.name }.toSet()
         val newDeviceNames = response.devices.map { it.name }.toSet()
         val removedDeviceNames = oldDeviceNames - newDeviceNames
@@ -838,10 +851,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else if (_selectedDeviceName.value == null) {
             setActiveDevice(devices.firstOrNull())
         }
-        if (wateringHistoryCache[false].isNullOrEmpty()) {
+        if (!wateringHistoryCache.containsKey(false)) {
             fetchWateringHistory(successfulOnly = false)
         }
-        startWateringHistoryAutoRefresh()
         restoreWateringOperations(devices)
     }
 
@@ -931,6 +943,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(WATERING_HISTORY_POLL_INTERVAL_MS.milliseconds)
                 fetchWateringHistory(successfulOnly = _wateringHistory.value.successfulOnly)
             }
+        }
+    }
+
+    fun setWateringHistoryVisible(visible: Boolean) {
+        if (visible) {
+            fetchWateringHistory(successfulOnly = _wateringHistory.value.successfulOnly)
+            startWateringHistoryAutoRefresh()
+        } else {
+            wateringHistoryRefreshJob?.cancel()
+            wateringHistoryRefreshJob = null
         }
     }
 

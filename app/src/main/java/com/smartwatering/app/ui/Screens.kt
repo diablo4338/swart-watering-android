@@ -228,6 +228,9 @@ fun DevicesScreen(
         }
     ) { innerPadding ->
         if (devices.isEmpty()) {
+            LaunchedEffect(Unit) {
+                viewModel.setWateringHistoryVisible(true)
+            }
             Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                 Box(modifier = Modifier.weight(1f)) {
                     WateringHistoryPage(
@@ -252,6 +255,7 @@ fun DevicesScreen(
         )
         LaunchedEffect(pagerState.currentPage, devices) {
             viewModel.setActiveDevice(devices.getOrNull(pagerState.currentPage))
+            viewModel.setWateringHistoryVisible(pagerState.currentPage == devices.size)
         }
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             if (globalError != null && !showBackendUnavailable) {
