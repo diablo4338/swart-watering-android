@@ -110,6 +110,10 @@ object Repository {
 
     fun hasPrimaryToken(): Boolean = !primaryToken.isNullOrBlank()
 
+    fun clearActiveToken() {
+        if (_usingFallback.value) fallbackToken = null else primaryToken = null
+    }
+
     fun clearTokens() {
         primaryToken = null
         fallbackToken = null
@@ -123,6 +127,9 @@ object Repository {
         runCatching {
             okHttpClient.newBuilder()
                 .apply { interceptors().clear() }
+                .connectTimeout(2, TimeUnit.SECONDS)
+                .readTimeout(2, TimeUnit.SECONDS)
+                .callTimeout(3, TimeUnit.SECONDS)
                 .build()
                 .newCall(request)
                 .execute()

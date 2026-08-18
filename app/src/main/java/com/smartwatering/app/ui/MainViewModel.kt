@@ -188,9 +188,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         clearLegacyPlaintextPrefs(application)
-        checkAutoLogin()
-        refreshAppRelease()
+        val releaseRefreshDeferred = checkAutoLogin()
+        if (!releaseRefreshDeferred) refreshAppRelease()
         monitorBackendRecovery()
+    }
+
+    private fun resumeFallbackSession() {
+        viewModelScope.launch {
+            if (Repository.probePrimaryBackend()) {
+                if (Repository.hasPrimaryToken()) {
+                    probeBackend()
+                } else {
+                    clearSession(preserveBackendTokens = true)
+                    _error.value = null
+                }
+            } else {
+                fetchDevices()
+            }
+            refreshAppRelease()
+        }
     }
 
     private fun monitorBackendRecovery() {
@@ -246,7 +262,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun checkAutoLogin() {
+    private fun checkAutoLogin(): Boolean {
         val now = System.currentTimeMillis() / 1000L
         // Treat the old unscoped session as primary during the one-time migration.
         val primaryToken = prefs.getString(AUTH_TOKEN_PRIMARY, null)
@@ -277,10 +293,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             _currentScreen.value = Screen.Devices
+            if (Repository.usingFallback.value) {
+                // Do not start requests against the previously active fallback until a
+                // fast primary probe has established which backend should handle startup.
+                resumeFallbackSession()
+                return true
+            }
             fetchDevices()
         } else {
             clearSession()
         }
+        return false
     }
 
     private fun SharedPreferences.Editor.storeActiveSession(response: LoginResponse) {
@@ -363,9 +386,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.d(TAG, "Remote logout failed", e)
             } finally {
-                clearSession()
+                clearActiveSession()
             }
         }
+    }
+
+    private fun clearActiveSession() {
+        prefs.edit {
+            if (Repository.usingFallback.value) {
+                remove(AUTH_TOKEN_FALLBACK)
+                remove(AUTH_EXPIRES_AT_FALLBACK)
+            } else {
+                remove(AUTH_TOKEN_PRIMARY)
+                remove(AUTH_EXPIRES_AT_PRIMARY)
+                remove("auth_token")
+                remove("auth_expires_at")
+            }
+        }
+        Repository.clearActiveToken()
+        clearSession(preserveBackendTokens = true)
     }
 
     private fun clearSession(preserveBackendTokens: Boolean = false) {
@@ -922,7 +961,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             if (e is HttpException && e.code() == 401) {
                 _error.value = "Session expired. Please log in again."
-                clearSession()
+                clearActiveSession()
             }
         }
     }
@@ -1345,7 +1384,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (e: Exception) {
                     if (e is HttpException && e.code() == 401) {
                         _error.value = "Session expired. Please log in again."
-                        clearSession()
+                        clearActiveSession()
                         break
                     }
                 }
