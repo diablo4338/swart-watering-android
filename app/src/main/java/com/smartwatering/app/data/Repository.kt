@@ -117,6 +117,8 @@ object Repository {
 
     suspend fun probePrimaryBackend(): Boolean = withContext(Dispatchers.IO) {
         if (!_usingFallback.value) return@withContext false
+        // The two backends have independent session stores, so recovery is checked without
+        // trying to reuse the fallback token on the primary.
         val request = Request.Builder().url("${baseUrl}healthz").get().build()
         runCatching {
             okHttpClient.newBuilder()
@@ -126,7 +128,6 @@ object Repository {
                 .execute()
                 .use { response ->
                     if (!response.isSuccessful) return@use false
-                    if (!hasPrimaryToken()) return@use false
                     retryInterceptor.markPrimaryAvailable()
                     _backendAvailability.value = BackendAvailability.AVAILABLE
                     true

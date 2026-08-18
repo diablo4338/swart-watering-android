@@ -198,7 +198,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 delay(BACKEND_RECOVERY_POLL_INTERVAL_MS.milliseconds)
                 if (Repository.usingFallback.value) {
-                    if (Repository.probePrimaryBackend()) probeBackend()
+                    if (Repository.probePrimaryBackend()) {
+                        if (Repository.hasPrimaryToken()) {
+                            probeBackend()
+                        } else {
+                            // Independent backends require a separate login. Keep the fallback
+                            // session stored, but stop authenticated work until primary login.
+                            clearSession(preserveBackendTokens = true)
+                            _error.value = null
+                        }
+                    }
                 } else if (Repository.backendAvailability.value == BackendAvailability.UNAVAILABLE) {
                     probeBackend()
                 }
@@ -359,18 +368,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun clearSession() {
-        prefs.edit().apply {
-            remove("auth_token")
-            remove("auth_expires_at")
-            remove(AUTH_TOKEN_PRIMARY)
-            remove(AUTH_EXPIRES_AT_PRIMARY)
-            remove(AUTH_TOKEN_FALLBACK)
-            remove(AUTH_EXPIRES_AT_FALLBACK)
-            remove("saved_username")
-            apply()
+    private fun clearSession(preserveBackendTokens: Boolean = false) {
+        if (!preserveBackendTokens) {
+            prefs.edit().apply {
+                remove("auth_token")
+                remove("auth_expires_at")
+                remove(AUTH_TOKEN_PRIMARY)
+                remove(AUTH_EXPIRES_AT_PRIMARY)
+                remove(AUTH_TOKEN_FALLBACK)
+                remove(AUTH_EXPIRES_AT_FALLBACK)
+                remove("saved_username")
+                apply()
+            }
+            Repository.clearTokens()
         }
-        Repository.clearTokens()
         _currentScreen.value = Screen.Login
         _isLoading.value = false
         _isDevicesLoading.value = false
@@ -694,8 +705,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _wateringParameters.update { it + (device.name to parameters) }
                 }
                 .onFailure {
-                    val detail = (it as? Exception)?.let(::readableError) ?: it.message.orEmpty()
-                    _error.value = "Failed to load watering parameters: $detail"
+                    val error = it as? Exception
+                    if (error == null || !isBackendUnavailableError(error)) {
+                        val detail = error?.let(::readableError) ?: it.message.orEmpty()
+                        _error.value = "Failed to load watering parameters: $detail"
+                    }
                 }
         }
     }
@@ -709,7 +723,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _wateringParameters.update { it + (device.name to parameters) }
                 parameters.operationId?.let { trackControlOperation(device, it) }
             } catch (e: Exception) {
-                _error.value = "Failed to save watering parameters: ${readableError(e)}"
+                if (!isBackendUnavailableError(e)) {
+                    _error.value = "Failed to save watering parameters: ${readableError(e)}"
+                }
             }
         }
     }
@@ -1240,8 +1256,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (e is HttpException && e.code() == 401) {
                     handleApiError(e)
-                } else {
-                    _error.value = "Start failed: ${e.message}"
+                } else if (!isBackendUnavailableError(e)) {
+                    _error.value = "Start failed: ${readableError(e)}"
                 }
             } finally {
                 setActionLoading(device.name, false)
