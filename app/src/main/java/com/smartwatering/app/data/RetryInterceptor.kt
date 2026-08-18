@@ -82,15 +82,6 @@ class RetryInterceptor(
         }
     }
 
-    fun useFallback() {
-        val fallback = fallbackBaseUrl ?: return
-        synchronized(availabilityLock) {
-            activeBaseUrl = fallback
-            lastReportedRequestId = requestSequence.get()
-            onFallbackChanged(true)
-        }
-    }
-
     private fun reportAvailable(requestId: Long, baseUrl: HttpUrl) {
         synchronized(availabilityLock) {
             if (requestId <= lastReportedRequestId) return

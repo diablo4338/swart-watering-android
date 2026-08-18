@@ -105,7 +105,6 @@ object Repository {
     fun restoreTokens(primary: String?, fallback: String?) {
         primaryToken = primary
         fallbackToken = fallback
-        if (primary.isNullOrBlank() && !fallback.isNullOrBlank()) retryInterceptor.useFallback()
     }
 
     fun hasPrimaryToken(): Boolean = !primaryToken.isNullOrBlank()

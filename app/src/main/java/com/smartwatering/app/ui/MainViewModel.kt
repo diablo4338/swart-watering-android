@@ -188,25 +188,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         clearLegacyPlaintextPrefs(application)
-        val releaseRefreshDeferred = checkAutoLogin()
-        if (!releaseRefreshDeferred) refreshAppRelease()
+        checkAutoLogin()
+        refreshAppRelease()
         monitorBackendRecovery()
-    }
-
-    private fun resumeFallbackSession() {
-        viewModelScope.launch {
-            if (Repository.probePrimaryBackend()) {
-                if (Repository.hasPrimaryToken()) {
-                    probeBackend()
-                } else {
-                    clearSession(preserveBackendTokens = true)
-                    _error.value = null
-                }
-            } else {
-                fetchDevices()
-            }
-            refreshAppRelease()
-        }
     }
 
     private fun monitorBackendRecovery() {
@@ -262,7 +246,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun checkAutoLogin(): Boolean {
+    private fun checkAutoLogin() {
         val now = System.currentTimeMillis() / 1000L
         // Treat the old unscoped session as primary during the one-time migration.
         val primaryToken = prefs.getString(AUTH_TOKEN_PRIMARY, null)
@@ -293,17 +277,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             _currentScreen.value = Screen.Devices
-            if (Repository.usingFallback.value) {
-                // Do not start requests against the previously active fallback until a
-                // fast primary probe has established which backend should handle startup.
-                resumeFallbackSession()
-                return true
-            }
             fetchDevices()
         } else {
             clearSession()
         }
-        return false
     }
 
     private fun SharedPreferences.Editor.storeActiveSession(response: LoginResponse) {
