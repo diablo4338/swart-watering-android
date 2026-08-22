@@ -686,7 +686,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         updatePendingControlFlag(device.name, _deviceControl.value.pendingOperations)
                         if (operation.status in listOf("success", "error", "timeout", "cancelled")) {
                             if (operation.status == "success") {
-                                fetchDeviceStatus(device)
+                                val appliedDevice = operation.backendName
+                                    ?.takeIf { it != device.name }
+                                    ?.let { newName ->
+                                        refreshDevicesOnce()
+                                        _devices.value.firstOrNull { it.name == newName }?.also { renamed ->
+                                            _selectedDeviceName.value = renamed.name
+                                            _currentScreen.value = Screen.DeviceControl(renamed)
+                                        }
+                                    }
+                                    ?: device
+                                fetchDeviceStatus(appliedDevice)
                                 if (operation.dryWeightG != null ||
                                     operation.wetWeightG != null ||
                                     operation.wateringLossThresholdPercent != null
@@ -764,11 +774,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         deviceType: String,
         name: String,
         tareWeightG: Int?
-    ) = runControlCommand(device, "Configuration command queued") {
-        Repository.api.updateConfig(
-            device.name,
-            DeviceConfigRequest(deviceType, name, tareWeightG = tareWeightG)
-        )
+    ) {
+        if (_deviceControl.value.isLoading) return
+        viewModelScope.launch {
+            _deviceControl.value = _deviceControl.value.copy(isLoading = true, message = null, error = null)
+            try {
+                val operation = Repository.api.updateConfig(
+                    device.name,
+                    DeviceConfigRequest(
+                        deviceType = deviceType,
+                        backendName = name.trim().takeIf { it != device.name },
+                        tareWeightG = tareWeightG,
+                    )
+                )
+                _deviceControl.value = _deviceControl.value.copy(
+                    pendingOperations = stableQueueOrder(
+                        listOf(operation) + _deviceControl.value.pendingOperations.filterNot {
+                            it.operationId == operation.operationId
+                        }
+                    ),
+                    message = "Configuration command queued",
+                )
+                trackControlOperation(device, operation.operationId)
+            } catch (e: Exception) {
+                _deviceControl.value = _deviceControl.value.copy(error = readableError(e))
+            } finally {
+                _deviceControl.value = _deviceControl.value.copy(isLoading = false)
+            }
+        }
     }
 
     fun validateDeviceName(
@@ -846,22 +879,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             operationJobs.remove(deviceName)?.cancel()
         }
 
-        val openDeviceName = when (val screen = _currentScreen.value) {
-            is Screen.DeviceControl -> screen.device.name
-            is Screen.DetectedWateringHistory -> screen.device.name
-            else -> null
-        }
-        if (openDeviceName != null && openDeviceName in removedDeviceNames) {
-            deviceControlRefreshJob?.cancel()
-            deviceControlRefreshJob = null
-            controlOperationJobs.values.toList().forEach { it.cancel() }
-            controlOperationJobs.clear()
-            _deviceControl.value = DeviceControlUiState()
-            _detectedWateringHistory.value = DetectedWateringHistoryUiState()
-            _currentScreen.value = Screen.Devices
-        }
-
-        if (_selectedDeviceName.value?.let(removedDeviceNames::contains) == true) {
+        // A device can disappear from a single polling response while its status or name is
+        // changing. Navigation belongs to the user: never close an open detail screen because
+        // of a transient device-list snapshot.
+        if (_currentScreen.value is Screen.Devices &&
+            _selectedDeviceName.value?.let(removedDeviceNames::contains) == true
+        ) {
             _selectedDeviceName.value = devices.firstOrNull()?.name
         }
 
@@ -1170,12 +1193,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _deviceStates.update { current ->
                 val old = current[device.name] ?: DeviceUIState()
                 val latestStatus = status.result?.let {
+                    val mergedResult = mergeRawStatus(old.latestStatus?.result, it)
                     LatestStatusResponse(
                         device = device.name,
                         status = "online",
                         source = status.source,
                         available = status.available,
-                        result = it,
+                        result = mergedResult,
                         resultReceivedAt = status.resultReceivedAt,
                         operationId = status.operationId,
                         pendingOperationId = status.pendingOperationId,
@@ -1193,7 +1217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             if (e is HttpException && e.code() == 401) {
                 handleApiError(e)
-            } else {
+            } else if (e !is HttpException || e.code() !in 500..599) {
                 _deviceStates.update { current ->
                     val old = current[device.name] ?: DeviceUIState()
                     current + (device.name to old.copy(isOnline = false))
@@ -1272,24 +1296,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val wasOnline = _deviceStates.value[device.name]?.isOnline
             val shouldRequestLive = wasOnline == true
-            val latest = fetchStatusForConnectivity(device, shouldRequestLive)
+            val received = fetchStatusForConnectivity(device, shouldRequestLive)
             _deviceStates.update { current ->
                 val old = current[device.name] ?: DeviceUIState()
+                val latest = received.copy(
+                    result = mergeRawStatus(old.latestStatus?.result, received.result)
+                )
                 current + (device.name to old.copy(
                     latestStatus = latest,
                     isOnline = latest.status == "online"
                 ))
             }
-            if (latest.pendingOperationId != null) {
-                trackOperation(device, latest.pendingOperationId, isWatering = false)
-            } else if (!latest.available) {
+            if (received.pendingOperationId != null) {
+                trackOperation(device, received.pendingOperationId, isWatering = false)
+            } else if (!received.available) {
                 val operation = Repository.api.queueStatusRefresh(device.name)
                 trackOperation(device, operation.operationId, isWatering = false)
             }
         } catch (e: Exception) {
             if (e is HttpException && e.code() == 401) {
                 handleApiError(e)
-            } else {
+            } else if (e !is HttpException || e.code() !in 500..599) {
                 _deviceStates.update { current ->
                     val old = current[device.name] ?: DeviceUIState()
                     current + (device.name to old.copy(isOnline = false))
@@ -1297,6 +1324,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d(TAG, "Status refresh failed for ${device.name}: ${readableError(e)}", e)
             }
         }
+    }
+
+    private fun mergeRawStatus(old: RawDeviceStatus?, fresh: RawDeviceStatus?): RawDeviceStatus? {
+        if (fresh == null) return old
+        if (old == null) return fresh
+        val mergedDevice = when {
+            fresh.device == null -> old.device
+            old.device == null -> fresh.device
+            else -> fresh.device.copy(
+                name = fresh.device.name ?: old.device.name,
+                type = fresh.device.type ?: old.device.type,
+            )
+        }
+        val mergedWatering = when {
+            fresh.watering == null -> old.watering
+            old.watering == null -> fresh.watering
+            else -> fresh.watering.copy(
+                state = fresh.watering.state ?: old.watering.state,
+                lastOperationType = fresh.watering.lastOperationType ?: old.watering.lastOperationType,
+                lastOperationStatus = fresh.watering.lastOperationStatus ?: old.watering.lastOperationStatus,
+            )
+        }
+        val oldConfig = old.config
+        val newConfig = fresh.config
+        val mergedConfig = when {
+            newConfig == null -> oldConfig
+            oldConfig == null -> newConfig
+            else -> newConfig.copy(
+                targetG = newConfig.targetG ?: oldConfig.targetG,
+                dryWeightG = newConfig.dryWeightG ?: oldConfig.dryWeightG,
+                wetWeightG = newConfig.wetWeightG ?: oldConfig.wetWeightG,
+                wateringLossThresholdPercent = newConfig.wateringLossThresholdPercent
+                    ?: oldConfig.wateringLossThresholdPercent,
+                tareWeightG = newConfig.tareWeightG ?: oldConfig.tareWeightG,
+                zeroRaw = newConfig.zeroRaw ?: oldConfig.zeroRaw,
+                rawPerGram = newConfig.rawPerGram ?: oldConfig.rawPerGram,
+                sleepDisabled = newConfig.sleepDisabled ?: oldConfig.sleepDisabled,
+                sleepIntervalMin = newConfig.sleepIntervalMin ?: oldConfig.sleepIntervalMin,
+            )
+        }
+        val oldWeight = old.weight
+        val newWeight = fresh.weight
+        val mergedWeight = when {
+            newWeight == null -> oldWeight
+            oldWeight == null -> newWeight
+            else -> newWeight.copy(
+                grossWeightG = newWeight.grossWeightG ?: oldWeight.grossWeightG,
+                usefulWeightG = newWeight.usefulWeightG ?: oldWeight.usefulWeightG,
+                waterUsedG = newWeight.waterUsedG ?: oldWeight.waterUsedG,
+            )
+        }
+        return fresh.copy(
+            device = mergedDevice,
+            watering = mergedWatering,
+            config = mergedConfig,
+            weight = mergedWeight,
+        )
     }
 
     fun startWatering(device: Device, grams: Double) {

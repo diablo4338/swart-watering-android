@@ -48,6 +48,7 @@ data class LogoutResponse(
 @JsonClass(generateAdapter = true)
 data class Device(
     val name: String,
+    @param:Json(name = "controller_name") val controllerName: String,
     val type: String,
     @param:Json(name = "has_pending_operations") val hasPendingOperations: Boolean = false
 )
@@ -161,6 +162,8 @@ data class DeviceConfig(
     @param:Json(name = "wet_weight_g") val wetWeightG: Double? = null,
     @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Double? = null,
     @param:Json(name = "tare_weight_g") val tareWeightG: Double?,
+    @param:Json(name = "zero_raw") val zeroRaw: Double? = null,
+    @param:Json(name = "raw_per_gram") val rawPerGram: Double? = null,
     @param:Json(name = "sleep_disabled") val sleepDisabled: Boolean? = null,
     @param:Json(name = "sleep_interval_min") val sleepIntervalMin: Int? = null
 )
@@ -174,7 +177,8 @@ data class CalibrationRequest(@param:Json(name = "weight_g") val weightG: Double
 @JsonClass(generateAdapter = true)
 data class DeviceConfigRequest(
     @param:Json(name = "device_type") val deviceType: String,
-    val name: String,
+    @param:Json(name = "backend_name") val backendName: String? = null,
+    val name: String? = null,
     @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
     @param:Json(name = "tare_weight_g") val tareWeightG: Int? = null
 )
@@ -218,6 +222,7 @@ data class OperationResponse(
     val minutes: Int? = null,
     @param:Json(name = "weight_g") val weightG: Double? = null,
     @param:Json(name = "device_type") val deviceType: String? = null,
+    @param:Json(name = "backend_name") val backendName: String? = null,
     val name: String? = null,
     @param:Json(name = "dry_weight_g") val dryWeightG: Double? = null,
     @param:Json(name = "tare_weight_g") val tareWeightG: Double? = null,

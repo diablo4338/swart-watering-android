@@ -61,6 +61,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingExcept
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -618,7 +619,7 @@ fun DevicePage(
             }
 
             Text(
-                device.name,
+                "${device.name} (${device.controllerName})",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -898,29 +899,26 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
     fun confirmedOperation(type: String): OperationResponse? =
         control.recentOperations.firstOrNull {
             it.type == type &&
-                it.status in listOf("accepted", "success") &&
+                it.status == "success" &&
                 it.updatedAt > snapshotReceivedAt
         }
     val confirmedConfig = confirmedOperation(OperationType.DEVICE_CONFIG.apiValue)
     val confirmedSleepInterval = confirmedOperation(OperationType.SLEEP_INTERVAL.apiValue)
     val confirmedSleep = control.recentOperations.firstOrNull {
         it.type in listOf(OperationType.SLEEP_ENABLE.apiValue, OperationType.SLEEP_DISABLE.apiValue) &&
-            it.status in listOf("accepted", "success") &&
+            it.status == "success" &&
             it.updatedAt > snapshotReceivedAt
     }
     val pendingSleepOperation = control.pendingOperations.firstOrNull {
         it.type == OperationType.SLEEP_ENABLE.apiValue || it.type == OperationType.SLEEP_DISABLE.apiValue
     }
-    val pendingConfigOperation = control.pendingOperations.firstOrNull { it.type == OperationType.DEVICE_CONFIG.apiValue }
-    val pendingSleepIntervalOperation = control.pendingOperations.firstOrNull { it.type == OperationType.SLEEP_INTERVAL.apiValue }
     val pendingZeroOperation = control.pendingOperations.firstOrNull { it.type == OperationType.ZERO_CAPTURE.apiValue }
     val pendingCalibrationOperation = control.pendingOperations.firstOrNull { it.type == OperationType.SCALE_CALIBRATION.apiValue }
-    val actualName = pendingConfigOperation?.name ?: confirmedConfig?.name ?: raw?.device?.name ?: device.name
-    val actualType = pendingConfigOperation?.deviceType ?: confirmedConfig?.deviceType ?: raw?.device?.type ?: device.type
-    val actualTareWeight = pendingConfigOperation?.tareWeightG ?: confirmedConfig?.tareWeightG ?: config?.tareWeightG
-    val actualSleepMinutes = pendingSleepIntervalOperation?.minutes ?: confirmedSleepInterval?.minutes ?: config?.sleepIntervalMin
-    val effectiveSleepOperation = pendingSleepOperation ?: confirmedSleep
-    val actualSleepDisabled = when (effectiveSleepOperation?.type) {
+    val actualName = device.name
+    val actualType = confirmedConfig?.deviceType ?: raw?.device?.type ?: device.type
+    val actualTareWeight = confirmedConfig?.tareWeightG ?: config?.tareWeightG
+    val actualSleepMinutes = confirmedSleepInterval?.minutes ?: config?.sleepIntervalMin
+    val actualSleepDisabled = when (confirmedSleep?.type) {
         OperationType.SLEEP_ENABLE.apiValue -> false
         OperationType.SLEEP_DISABLE.apiValue -> true
         else -> config?.sleepDisabled
@@ -930,27 +928,56 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
     var type by remember(device.name) { mutableStateOf(actualType) }
     var tareWeight by remember(device.name) { mutableStateOf(actualTareWeight?.roundToInt()?.toString() ?: "") }
     var sleepMinutes by remember(device.name) { mutableStateOf(actualSleepMinutes?.toString() ?: "") }
+    var sleepDisabled by remember(device.name) { mutableStateOf(actualSleepDisabled) }
     var calibrationWeight by remember(device.name) { mutableStateOf("") }
     var configDirty by remember(device.name) { mutableStateOf(false) }
     var nameAvailable by remember(device.name) { mutableStateOf<Boolean?>(true) }
     var nameValidationError by remember(device.name) { mutableStateOf<String?>(null) }
     var nameValidationInProgress by remember(device.name) { mutableStateOf(false) }
     var sleepIntervalDirty by remember(device.name) { mutableStateOf(false) }
-    var calibrationDirty by remember(device.name) { mutableStateOf(false) }
 
-    LaunchedEffect(raw, confirmedConfig, confirmedSleepInterval, pendingConfigOperation, pendingSleepIntervalOperation) {
+    LaunchedEffect(device.name, name) {
+        val candidate = name.trim()
+        if (candidate == actualName) {
+            nameAvailable = true
+            nameValidationError = null
+            nameValidationInProgress = false
+            return@LaunchedEffect
+        }
+        if (candidate.isEmpty()) {
+            nameAvailable = false
+            nameValidationError = "Name must not be empty"
+            nameValidationInProgress = false
+            return@LaunchedEffect
+        }
+        nameValidationInProgress = true
+        delay(400.milliseconds)
+        viewModel.validateDeviceName(device, candidate) { checkedName, available, error ->
+            if (name.trim() == checkedName) {
+                nameAvailable = available
+                nameValidationError = error
+                nameValidationInProgress = false
+            }
+        }
+    }
+
+    LaunchedEffect(raw, confirmedConfig, confirmedSleepInterval, confirmedSleep) {
         if (!configDirty) {
             name = actualName
             type = actualType
-            tareWeight = actualTareWeight?.roundToInt()?.toString() ?: ""
+            actualTareWeight?.let { tareWeight = it.roundToInt().toString() }
         }
         if (!sleepIntervalDirty) {
-            sleepMinutes = actualSleepMinutes?.toString() ?: ""
+            actualSleepMinutes?.let { sleepMinutes = it.toString() }
         }
+        actualSleepDisabled?.let { sleepDisabled = it }
     }
-    LaunchedEffect(pendingCalibrationOperation) {
-        if (!calibrationDirty) {
-            calibrationWeight = pendingCalibrationOperation?.weightG?.roundToInt()?.toString() ?: ""
+    LaunchedEffect(control.message) {
+        if (control.message == "Configuration command queued") {
+            configDirty = false
+            name = actualName
+            type = actualType
+            tareWeight = actualTareWeight?.roundToInt()?.toString() ?: ""
         }
     }
     LaunchedEffect(device.name) {
@@ -968,6 +995,27 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 else -> "${operationStatusLabel(operation)}: $value"
             }
         }
+    fun pendingChangedValue(
+        appliedValue: Any?,
+        selector: (OperationResponse) -> Any?,
+    ): String? = control.pendingOperations.firstNotNullOfOrNull { operation ->
+        val requestedValue = selector(operation) ?: return@firstNotNullOfOrNull null
+        val unchanged = when {
+            requestedValue is Number && appliedValue is Number ->
+                requestedValue.toDouble() == appliedValue.toDouble()
+            else -> requestedValue == appliedValue
+        }
+        if (unchanged) {
+            null
+        } else {
+            val displayedValue = if (requestedValue is Number) {
+                requestedValue.toDouble().roundToInt()
+            } else {
+                requestedValue
+            }
+            "${operationStatusLabel(operation)}: $displayedValue"
+        }
+    }
     val activeQueueCount = control.pendingOperations.count {
         it.status in listOf("queued", "sending", "accepted", "running")
     }
@@ -989,6 +1037,11 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Device parameters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Backend: ${device.name} (MCU: ${device.controllerName})",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
             ControlField(
                 value = name,
                 onValueChange = {
@@ -998,32 +1051,21 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                     nameValidationError = null
                 },
                 label = "Name",
-                pending = pendingValue { it.name },
+                pending = pendingChangedValue(actualName) { it.backendName },
                 error = nameValidationError,
-                onFocusLost = {
-                    val candidate = name.trim()
-                    nameValidationInProgress = true
-                    viewModel.validateDeviceName(device, candidate) { checkedName, available, error ->
-                        if (name.trim() == checkedName) {
-                            nameAvailable = available
-                            nameValidationError = error
-                            nameValidationInProgress = false
-                        }
-                    }
-                },
             )
             DeviceTypeField(
                 value = type,
                 options = deviceTypes,
                 onValueChange = { type = it; configDirty = true },
-                pending = pendingValue { it.deviceType }
+                pending = pendingChangedValue(actualType) { it.deviceType }
             )
             if (type != DeviceType.PLANT.apiValue) {
                 ControlField(
                     tareWeight,
                     { tareWeight = it; configDirty = true },
                     "Tare weight (g)",
-                    pendingValue { it.tareWeightG },
+                    pendingChangedValue(actualTareWeight) { it.tareWeightG },
                     true
                 )
             }
@@ -1031,7 +1073,6 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 onClick = {
                     val tare = tareWeight.toIntOrNull()
                     if (type != DeviceType.PLANT.apiValue && tare == null) return@Button
-                    configDirty = false
                     viewModel.updateDeviceConfig(device, type, name, tare)
                 },
                 enabled = name.isNotBlank() && nameAvailable == true &&
@@ -1039,12 +1080,10 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                     (type == DeviceType.PLANT.apiValue || tareWeight.toIntOrNull() != null),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Save parameters") }
-            PendingCommandMarker(pendingConfigOperation, "Parameters")
-
             HorizontalDivider()
             Text("Sleep", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Box(modifier = Modifier.fillMaxWidth().height(20.dp)) {
-                pendingSleepOperation?.let {
+                (pendingSleepOperation ?: confirmedSleep)?.let {
                     val mode = if (it.type == OperationType.SLEEP_ENABLE.apiValue) "enabled" else "disabled"
                     Text(
                         text = "${operationStatusLabel(it)}: sleep $mode",
@@ -1061,19 +1100,23 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 Column {
                     Text("Sleep mode", style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        if (actualSleepDisabled == false) "Enabled" else "Disabled",
+                        when (sleepDisabled) {
+                            false -> "Enabled"
+                            true -> "Disabled"
+                            null -> "No data"
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
                 Switch(
-                    checked = actualSleepDisabled == false,
+                    checked = sleepDisabled == false,
                     onCheckedChange = { enabled ->
-                        if (actualSleepDisabled != null && enabled != !actualSleepDisabled) {
+                        if (sleepDisabled != null && enabled != !sleepDisabled!!) {
                             viewModel.setSleep(device, enabled)
                         }
                     },
-                    enabled = actualSleepDisabled != null &&
+                    enabled = sleepDisabled != null &&
                         pendingSleepOperation?.status !in listOf("queued", "sending", "accepted", "running")
                 )
             }
@@ -1081,21 +1124,20 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 sleepMinutes,
                 { sleepMinutes = it; sleepIntervalDirty = true },
                 "Sleep interval (min)",
-                pendingValue { it.minutes },
+                pendingChangedValue(actualSleepMinutes) { it.minutes },
                 true
             )
             Button(
                 onClick = {
                     sleepMinutes.toIntOrNull()?.let {
                         sleepIntervalDirty = false
+                        sleepMinutes = actualSleepMinutes?.toString() ?: ""
                         viewModel.setSleepInterval(device, it)
                     }
                 },
                 enabled = (sleepMinutes.toIntOrNull() ?: 0) in 1..50,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Change sleep interval") }
-            PendingCommandMarker(pendingSleepIntervalOperation, "Sleep interval")
-
             HorizontalDivider()
             Text("Scale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             HoldToConfirmButton(
@@ -1106,7 +1148,7 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
             PendingCommandMarker(pendingZeroOperation, "Set zero")
             ControlField(
                 calibrationWeight,
-                { calibrationWeight = it; calibrationDirty = true },
+                { calibrationWeight = it },
                 "Calibration weight (g)",
                 pendingValue { it.weightG },
                 true
@@ -1115,7 +1157,7 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                 label = "Calibrate",
                 onConfirmed = {
                     calibrationWeight.toIntOrNull()?.let {
-                        calibrationDirty = false
+                        calibrationWeight = ""
                         viewModel.calibrate(device, it.toDouble())
                     }
                 },
