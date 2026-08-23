@@ -176,12 +176,13 @@ data class CalibrationRequest(@param:Json(name = "weight_g") val weightG: Double
 
 @JsonClass(generateAdapter = true)
 data class DeviceConfigRequest(
-    @param:Json(name = "device_type") val deviceType: String,
-    @param:Json(name = "backend_name") val backendName: String? = null,
-    val name: String? = null,
+    @param:Json(name = "device_type") val deviceType: String? = null,
     @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
     @param:Json(name = "tare_weight_g") val tareWeightG: Int? = null
 )
+
+@JsonClass(generateAdapter = true)
+data class BackendNameRequest(val name: String)
 
 @JsonClass(generateAdapter = true)
 data class QueueClearResponse(val cleared: Int)

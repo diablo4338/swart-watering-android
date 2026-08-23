@@ -724,11 +724,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (enabled) Repository.api.enableSleep(device.name) else Repository.api.disableSleep(device.name)
     }
 
-    fun setSleepInterval(device: Device, minutes: Int) =
-        runControlCommand(device, "Sleep interval command queued") {
-            Repository.api.setSleepInterval(device.name, SleepIntervalRequest(minutes))
-        }
-
     fun captureZero(device: Device) = runControlCommand(device, "Zero command queued") {
         Repository.api.captureZero(device.name)
     }
@@ -773,29 +768,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         device: Device,
         deviceType: String,
         name: String,
-        tareWeightG: Int?
+        tareWeightG: Int?,
+        currentTareWeightG: Int?,
+        sleepIntervalMinutes: Int?,
+        currentSleepIntervalMinutes: Int?,
     ) {
         if (_deviceControl.value.isLoading) return
         viewModelScope.launch {
             _deviceControl.value = _deviceControl.value.copy(isLoading = true, message = null, error = null)
             try {
-                val operation = Repository.api.updateConfig(
-                    device.name,
-                    DeviceConfigRequest(
-                        deviceType = deviceType,
-                        backendName = name.trim().takeIf { it != device.name },
-                        tareWeightG = tareWeightG,
+                val requestedName = name.trim()
+                val renamedDevice = if (requestedName != device.name) {
+                    Repository.api.updateBackendName(
+                        device.name,
+                        BackendNameRequest(requestedName),
                     )
-                )
+                } else {
+                    device
+                }
+
+                if (renamedDevice.name != device.name) {
+                    _devices.update { devices ->
+                        devices.map { if (it.name == device.name) renamedDevice else it }
+                    }
+                    _selectedDeviceName.value = renamedDevice.name
+                    _currentScreen.value = Screen.DeviceControl(renamedDevice)
+                }
+
+                val typeChanged = deviceType != device.type
+                val tareChanged = deviceType != DeviceType.PLANT.apiValue &&
+                    tareWeightG != currentTareWeightG
+                val sleepIntervalChanged = sleepIntervalMinutes != null &&
+                    sleepIntervalMinutes != currentSleepIntervalMinutes
+                val queuedOperations = mutableListOf<OperationResponse>()
+                if (typeChanged || tareChanged) {
+                    queuedOperations += Repository.api.updateConfig(
+                        renamedDevice.name,
+                        DeviceConfigRequest(
+                            deviceType = deviceType.takeIf { typeChanged },
+                            tareWeightG = tareWeightG.takeIf { tareChanged },
+                        )
+                    )
+                }
+                if (sleepIntervalChanged) {
+                    queuedOperations += Repository.api.setSleepInterval(
+                        renamedDevice.name,
+                        SleepIntervalRequest(requireNotNull(sleepIntervalMinutes)),
+                    )
+                }
+
+                val queuedIds = queuedOperations.map { it.operationId }.toSet()
                 _deviceControl.value = _deviceControl.value.copy(
                     pendingOperations = stableQueueOrder(
-                        listOf(operation) + _deviceControl.value.pendingOperations.filterNot {
-                            it.operationId == operation.operationId
+                        queuedOperations + _deviceControl.value.pendingOperations.filterNot {
+                            it.operationId in queuedIds
                         }
                     ),
-                    message = "Configuration command queued",
+                    message = "Parameters saved",
                 )
-                trackControlOperation(device, operation.operationId)
+                queuedOperations.forEach { trackControlOperation(renamedDevice, it.operationId) }
             } catch (e: Exception) {
                 _deviceControl.value = _deviceControl.value.copy(error = readableError(e))
             } finally {

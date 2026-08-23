@@ -973,11 +973,13 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
         actualSleepDisabled?.let { sleepDisabled = it }
     }
     LaunchedEffect(control.message) {
-        if (control.message == "Configuration command queued") {
+        if (control.message == "Parameters saved") {
             configDirty = false
+            sleepIntervalDirty = false
             name = actualName
             type = actualType
             tareWeight = actualTareWeight?.roundToInt()?.toString() ?: ""
+            sleepMinutes = actualSleepMinutes?.toString() ?: sleepMinutes
         }
     }
     LaunchedEffect(device.name) {
@@ -1069,17 +1071,6 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
                     true
                 )
             }
-            Button(
-                onClick = {
-                    val tare = tareWeight.toIntOrNull()
-                    if (type != DeviceType.PLANT.apiValue && tare == null) return@Button
-                    viewModel.updateDeviceConfig(device, type, name, tare)
-                },
-                enabled = name.isNotBlank() && nameAvailable == true &&
-                    !nameValidationInProgress && type in deviceTypes &&
-                    (type == DeviceType.PLANT.apiValue || tareWeight.toIntOrNull() != null),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Save parameters") }
             HorizontalDivider()
             Text("Sleep", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Box(modifier = Modifier.fillMaxWidth().height(20.dp)) {
@@ -1129,15 +1120,27 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
             )
             Button(
                 onClick = {
-                    sleepMinutes.toIntOrNull()?.let {
-                        sleepIntervalDirty = false
-                        sleepMinutes = actualSleepMinutes?.toString() ?: ""
-                        viewModel.setSleepInterval(device, it)
-                    }
+                    val tare = tareWeight.toIntOrNull()
+                    val interval = sleepMinutes.toIntOrNull()
+                    if (type != DeviceType.PLANT.apiValue && tare == null) return@Button
+                    if (sleepIntervalDirty && (interval == null || interval !in 1..50)) return@Button
+                    viewModel.updateDeviceConfig(
+                        device,
+                        type,
+                        name,
+                        tare,
+                        actualTareWeight?.roundToInt(),
+                        interval,
+                        actualSleepMinutes,
+                    )
                 },
-                enabled = (sleepMinutes.toIntOrNull() ?: 0) in 1..50,
+                enabled = (configDirty || sleepIntervalDirty) &&
+                    name.isNotBlank() && nameAvailable == true &&
+                    !nameValidationInProgress && type in deviceTypes &&
+                    (type == DeviceType.PLANT.apiValue || tareWeight.toIntOrNull() != null) &&
+                    (!sleepIntervalDirty || (sleepMinutes.toIntOrNull() ?: 0) in 1..50),
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Change sleep interval") }
+            ) { Text("Save parameters") }
             HorizontalDivider()
             Text("Scale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             HoldToConfirmButton(

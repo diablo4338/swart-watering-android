@@ -28,6 +28,12 @@ interface ApiService {
         @Query("current_name") currentName: String
     ): DeviceNameAvailabilityResponse
 
+    @PUT("api/v2/devices/{device}/backend-name")
+    suspend fun updateBackendName(
+        @Path("device") deviceName: String,
+        @Body request: BackendNameRequest
+    ): Device
+
     @GET("api/v2/devices/{device}/watering-parameters")
     suspend fun getWateringParameters(@Path("device") deviceName: String): WateringParameters
 
