@@ -791,6 +791,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _devices.update { devices ->
                         devices.map { if (it.name == device.name) renamedDevice else it }
                     }
+                    _deviceStates.update { states ->
+                        val previous = states[device.name]
+                        val withoutOldName = states - device.name
+                        if (previous == null) withoutOldName
+                        else withoutOldName + (renamedDevice.name to previous)
+                    }
+                    _wateringParameters.update { parameters ->
+                        val previous = parameters[device.name]
+                        val withoutOldName = parameters - device.name
+                        if (previous == null) withoutOldName
+                        else withoutOldName + (renamedDevice.name to previous)
+                    }
                     _selectedDeviceName.value = renamedDevice.name
                     _currentScreen.value = Screen.DeviceControl(renamedDevice)
                 }

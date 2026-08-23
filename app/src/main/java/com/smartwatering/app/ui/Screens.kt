@@ -18,6 +18,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,10 +35,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -889,6 +892,7 @@ fun DetectedWateringHistoryScreen(viewModel: MainViewModel, device: Device) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
+    val focusManager = LocalFocusManager.current
     val control by viewModel.deviceControl.collectAsState()
     val deviceTypes by viewModel.deviceTypes.collectAsState()
     val deviceStates by viewModel.deviceStates.collectAsState()
@@ -1120,6 +1124,7 @@ fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
             )
             Button(
                 onClick = {
+                    focusManager.clearFocus(force = true)
                     val tare = tareWeight.toIntOrNull()
                     val interval = sleepMinutes.toIntOrNull()
                     if (type != DeviceType.PLANT.apiValue && tare == null) return@Button
@@ -1223,12 +1228,19 @@ private fun ControlField(
     onFocusLost: (() -> Unit)? = null,
 ) {
     var hadFocus by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         isError = error != null,
-        keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = { focusManager.clearFocus(force = true) },
+        ),
         supportingText = {
             if (error != null) {
                 Text(error, color = MaterialTheme.colorScheme.error)
