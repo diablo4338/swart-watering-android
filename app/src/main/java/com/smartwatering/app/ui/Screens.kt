@@ -231,9 +231,6 @@ private fun DeviceCardPage(
                         },
                     ) { Text(block.title ?: block.id) }
                 }
-                operationQueue?.let { block ->
-                    key(block.id) { CardBlockRenderer(device.id, block, pendingActions, onAction) }
-                }
                 menuBlocks.firstOrNull { it.id == openBlockId }?.let { block ->
                     key(block.id) {
                         if ("${device.id}:${block.id}" in loadingBlocks) {
@@ -244,6 +241,9 @@ private fun DeviceCardPage(
                             CardBlockRenderer(device.id, block, pendingActions, onAction)
                         }
                     }
+                }
+                operationQueue?.let { block ->
+                    key(block.id) { CardBlockRenderer(device.id, block, pendingActions, onAction) }
                 }
                 overview?.let { OverviewStatistics(it) }
                 inlineBlocks.forEach { block ->
@@ -352,6 +352,7 @@ private fun OverviewHeader(block: CardBlock) {
 @Composable
 private fun OverviewValue(block: CardBlock) {
     val primary = block.data["primary_value"].asMap()
+    val statusCode = block.data["status"].asMap()["code"].asText()
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         val value = primary["value"].asNumber()
         Text(
@@ -364,8 +365,11 @@ private fun OverviewValue(block: CardBlock) {
                 else -> MaterialTheme.colorScheme.primary
             },
         )
-        block.data["snapshot_at"].asNumber()?.let {
-            Text("Snapshot: ${formatTimestamp(it)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (statusCode == "offline") {
+            block.data["snapshot_at"].asNumber()?.let {
+                Spacer(Modifier.height(10.dp))
+                Text("Snapshot: ${formatTimestamp(it)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
