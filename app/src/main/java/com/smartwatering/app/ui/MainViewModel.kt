@@ -83,8 +83,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val DEVICES_TIMEOUT_MS = 15000L
         const val STATUS_TIMEOUT_MS = 20000L
         const val DEVICE_POLL_INTERVAL_MS = 6000L
-        const val LIVE_STATUS_POLL_INTERVAL_MS = 3000L
-        const val SNAPSHOT_STATUS_POLL_INTERVAL_MS = 10000L
+        const val STATUS_POLL_INTERVAL_MS = 10000L
         const val DEVICE_LIST_POLL_INTERVAL_MS = 10000L
         const val WATERING_HISTORY_POLL_INTERVAL_MS = 30000L
         const val WATER_CONSUMPTION_POLL_INTERVAL_MS = 300000L
@@ -150,7 +149,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val operationJobs = mutableMapOf<String, Job>()
     private val statusRequestMutexes = mutableMapOf<String, Mutex>()
     private val statusRefreshJobs = mutableMapOf<String, Job>()
-    private val snapshotStatusJobs = mutableMapOf<String, Job>()
     private val wateringStatusJobs = mutableMapOf<String, Job>()
     private val waterConsumptionJobs = mutableMapOf<String, Job>()
     private val wateringHistoryJobs = mutableMapOf<Boolean, Job>()
@@ -409,8 +407,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         operationJobs.clear()
         statusRefreshJobs.values.toList().forEach { it.cancel() }
         statusRefreshJobs.clear()
-        snapshotStatusJobs.values.toList().forEach { it.cancel() }
-        snapshotStatusJobs.clear()
         wateringStatusJobs.values.toList().forEach { it.cancel() }
         wateringStatusJobs.clear()
         waterConsumptionJobs.values.toList().forEach { it.cancel() }
@@ -916,7 +912,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         removedDeviceNames.forEach { deviceName ->
             statusRefreshJobs.remove(deviceName)?.cancel()
-            snapshotStatusJobs.remove(deviceName)?.cancel()
             wateringStatusJobs.remove(deviceName)?.cancel()
             waterConsumptionJobs.remove(deviceName)?.cancel()
             operationJobs.remove(deviceName)?.cancel()
@@ -948,11 +943,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun configureDevicePolling(device: Device) {
         if (device.type == DeviceType.TANK.apiValue) {
             statusRefreshJobs.remove(device.name)?.cancel()
-            snapshotStatusJobs.remove(device.name)?.cancel()
             startWateringStatusAutoRefresh(device)
-            viewModelScope.launch {
-                fetchWateringStatus(device)
-            }
             waterConsumptionJobs.remove(device.name)?.cancel()
         } else {
             wateringStatusJobs.remove(device.name)?.cancel()
@@ -976,8 +967,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         statusRefreshJobs.values.toList().forEach { it.cancel() }
         statusRefreshJobs.clear()
-        snapshotStatusJobs.values.toList().forEach { it.cancel() }
-        snapshotStatusJobs.clear()
         wateringStatusJobs.values.toList().forEach { it.cancel() }
         wateringStatusJobs.clear()
         waterConsumptionJobs.values.toList().forEach { it.cancel() }
@@ -1074,34 +1063,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startStatusAutoRefresh(device: Device) {
         if (statusRefreshJobs[device.name]?.isActive == true) return
         statusRefreshJobs.remove(device.name)?.cancel()
-        startSnapshotStatusAutoRefresh(device)
         statusRefreshJobs[device.name] = viewModelScope.launch {
             while (true) {
-                val startedAt = System.currentTimeMillis()
-                val liveAvailable = fetchLiveStatusForPolling(device)
-                if (liveAvailable) {
-                    snapshotStatusJobs.remove(device.name)?.cancel()
+                val online = fetchDeviceHealthForPolling(device)
+                if (online) {
+                    fetchLiveStatusForPolling(device)
                 } else {
-                    startSnapshotStatusAutoRefresh(device)
+                    fetchSnapshotStatusForPolling(device)
                 }
-                val elapsed = System.currentTimeMillis() - startedAt
-                delay((LIVE_STATUS_POLL_INTERVAL_MS - elapsed).coerceAtLeast(0L).milliseconds)
+                delay(STATUS_POLL_INTERVAL_MS.milliseconds)
             }
         }
     }
 
-    private fun startSnapshotStatusAutoRefresh(device: Device) {
-        if (snapshotStatusJobs[device.name]?.isActive == true) return
-        snapshotStatusJobs.remove(device.name)?.cancel()
-        snapshotStatusJobs[device.name] = viewModelScope.launch {
-            while (true) {
-                val startedAt = System.currentTimeMillis()
-                if (!operationJobs.containsKey(device.name)) {
-                    fetchSnapshotStatusForPolling(device)
-                }
-                val elapsed = System.currentTimeMillis() - startedAt
-                delay((SNAPSHOT_STATUS_POLL_INTERVAL_MS - elapsed).coerceAtLeast(0L).milliseconds)
+    private suspend fun fetchDeviceHealthForPolling(device: Device): Boolean {
+        return try {
+            val online = Repository.api.getDeviceHealth(device.name).online
+            _deviceStates.update { current ->
+                val old = current[device.name] ?: DeviceUIState()
+                current + (device.name to old.copy(isOnline = online))
             }
+            online
+        } catch (e: Exception) {
+            if (e is HttpException && e.code() == 401) {
+                handleApiError(e)
+            } else {
+                Log.d(TAG, "Health poll failed for ${device.name}: ${readableError(e)}", e)
+            }
+            false
         }
     }
 
@@ -1198,8 +1187,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (wateringStatusJobs.containsKey(device.name)) return
         wateringStatusJobs[device.name] = viewModelScope.launch {
             while (true) {
+                val online = fetchDeviceHealthForPolling(device)
+                if (online) {
+                    fetchWateringStatus(device)
+                } else {
+                    fetchSnapshotStatusForPolling(device)
+                }
                 delay(DEVICE_POLL_INTERVAL_MS.milliseconds)
-                fetchWateringStatus(device)
             }
         }
     }

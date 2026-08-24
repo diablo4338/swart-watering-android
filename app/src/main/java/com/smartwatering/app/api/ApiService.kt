@@ -78,6 +78,9 @@ interface ApiService {
     @GET("api/v2/devices/{device}/status/latest")
     suspend fun getLatestStatus(@Path("device") deviceName: String): LatestStatusResponse
 
+    @GET("api/v2/devices/{device}/health")
+    suspend fun getDeviceHealth(@Path("device") deviceName: String): DeviceHealthResponse
+
     @GET("api/v2/devices/{device}/status/live")
     suspend fun getLiveStatus(@Path("device") deviceName: String): LatestStatusResponse
 

@@ -209,6 +209,13 @@ data class LatestStatusResponse(
 )
 
 @JsonClass(generateAdapter = true)
+data class DeviceHealthResponse(
+    val device: String,
+    val status: String,
+    val online: Boolean,
+)
+
+@JsonClass(generateAdapter = true)
 data class WateringStartRequest(
     @param:Json(name = "target_g") val targetG: Double
 )
