@@ -2,75 +2,51 @@ package com.smartwatering.app.ui
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Eco
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
-import com.smartwatering.app.BuildConfig
-import com.smartwatering.app.data.AppRelease
-import com.smartwatering.app.data.Device
-import com.smartwatering.app.data.DeviceType
-import com.smartwatering.app.data.LatestStatusResponse
-import com.smartwatering.app.data.OperationEvent
-import com.smartwatering.app.data.OperationResponse
-import com.smartwatering.app.data.OperationType
-import com.smartwatering.app.data.PlannedWatering
-import com.smartwatering.app.data.RawDeviceStatus
-import com.smartwatering.app.data.WateringStatus
-import com.smartwatering.app.data.WateringParameters
-import com.smartwatering.app.data.WaterConsumptionDay
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
+import com.smartwatering.app.BuildConfig
+import com.smartwatering.app.data.*
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(viewModel: MainViewModel) {
@@ -79,1692 +55,673 @@ fun LoginScreen(viewModel: MainViewModel) {
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val googleClientConfigured = BuildConfig.SMART_WATERING_GOOGLE_WEB_CLIENT_ID.isNotBlank()
+    val scope = rememberCoroutineScope()
+    val googleConfigured = BuildConfig.SMART_WATERING_GOOGLE_WEB_CLIENT_ID.isNotBlank()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        VersionInfoButton(
-            viewModel = viewModel,
-            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
-        )
+        VersionInfoButton(viewModel, Modifier.align(Alignment.TopEnd).padding(12.dp))
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
-        Text("Smart Watering", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(24.dp))
-        if (isLoading) {
-            CircularProgressIndicator()
-        } else {
-            if (BuildConfig.DEBUG) {
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Username") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = { viewModel.login(username, password) },
-                    enabled = username.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Login")
+            Text("Smart Watering", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(24.dp))
+            if (isLoading) CircularProgressIndicator() else {
+                if (BuildConfig.DEBUG) {
+                    OutlinedTextField(username, { username = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(password, { password = it }, label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = { viewModel.login(username, password) },
+                        enabled = username.isNotBlank() && password.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Login") }
+                    Spacer(Modifier.height(16.dp)); HorizontalDivider(); Spacer(Modifier.height(16.dp))
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            OutlinedButton(
-                onClick = {
-                    coroutineScope.launch {
-                        try {
-                            viewModel.loginWithGoogle(requestGoogleIdToken(context))
-                        } catch (_: GetCredentialCancellationException) {
-                            viewModel.showLoginError("Google login cancelled")
-                        } catch (_: NoCredentialException) {
-                            viewModel.showLoginError(
-                                "Google login failed: no Google account is available"
-                            )
-                        } catch (e: GetCredentialException) {
-                            viewModel.showLoginError("Google login failed: ${credentialErrorMessage(e)}")
-                        } catch (_: GoogleIdTokenParsingException) {
-                            viewModel.showLoginError("Google login failed: invalid ID token")
-                        } catch (e: Exception) {
-                            viewModel.showLoginError("Google login failed: ${e.message ?: e::class.java.simpleName}")
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            try { viewModel.loginWithGoogle(requestGoogleIdToken(context)) }
+                            catch (_: GetCredentialCancellationException) { viewModel.showLoginError("Google login cancelled") }
+                            catch (_: NoCredentialException) { viewModel.showLoginError("No Google account is available") }
+                            catch (e: GetCredentialException) { viewModel.showLoginError("Google login failed: ${e.message}") }
+                            catch (_: GoogleIdTokenParsingException) { viewModel.showLoginError("Invalid Google ID token") }
+                            catch (e: Exception) { viewModel.showLoginError("Google login failed: ${e.message}") }
                         }
-                    }
-                },
-                enabled = googleClientConfigured,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Sign in with Google")
+                    },
+                    enabled = googleConfigured,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Sign in with Google") }
             }
-            if (!googleClientConfigured) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Google sign-in is not configured",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-        }
-        error?.let {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
-        }
+            error?.let { Spacer(Modifier.height(16.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
 }
 
 private suspend fun requestGoogleIdToken(context: Context): String {
-    val googleIdOption = GetSignInWithGoogleOption.Builder(BuildConfig.SMART_WATERING_GOOGLE_WEB_CLIENT_ID)
-        .build()
-    val request = GetCredentialRequest.Builder()
-        .addCredentialOption(googleIdOption)
-        .build()
+    val option = GetSignInWithGoogleOption.Builder(BuildConfig.SMART_WATERING_GOOGLE_WEB_CLIENT_ID).build()
+    val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
     val credential = CredentialManager.create(context).getCredential(context, request).credential
-    if (
-        credential is CustomCredential &&
-        credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-    ) {
+    if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
         return GoogleIdTokenCredential.createFrom(credential.data).idToken
     }
-    throw IllegalStateException("unsupported Google credential")
-}
-
-private fun credentialErrorMessage(e: GetCredentialException): String {
-    val type = e::class.simpleName ?: "GetCredentialException"
-    val detail = e.message?.takeIf { it.isNotBlank() }
-    return if (detail == null) type else "$type: $detail"
+    error("Unsupported Google credential")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesScreen(
-    viewModel: MainViewModel,
-    showBackendUnavailable: Boolean = false,
-) {
+fun DevicesScreen(viewModel: MainViewModel, showBackendUnavailable: Boolean = false) {
     val devices by viewModel.devices.collectAsState()
-    val selectedDeviceName by viewModel.selectedDeviceName.collectAsState()
-    val deviceStates by viewModel.deviceStates.collectAsState()
-    val wateringParameters by viewModel.wateringParameters.collectAsState()
-    val wateringHistory by viewModel.wateringHistory.collectAsState()
-    val isDevicesLoading by viewModel.isDevicesLoading.collectAsState()
-    val globalError by viewModel.error.collectAsState()
+    val selected by viewModel.selectedDeviceName.collectAsState()
+    val cards by viewModel.cards.collectAsState()
+    val pendingActions by viewModel.pendingActions.collectAsState()
+    val loadingBlocks by viewModel.loadingBlocks.collectAsState()
+    val loading by viewModel.isDevicesLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Devices") },
                 navigationIcon = {
-                    if (showBackendUnavailable) {
-                        Box(
-                            modifier = Modifier.size(48.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        }
+                    if (showBackendUnavailable) Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     }
                 },
                 actions = {
                     VersionInfoButton(viewModel)
-                    IconButton(onClick = { viewModel.logout() }) {
+                    IconButton(onClick = viewModel::logout) {
                         Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout")
                     }
-                }
+                },
             )
-        }
-    ) { innerPadding ->
-        if (devices.isEmpty()) {
-            LaunchedEffect(Unit) {
-                viewModel.setWateringHistoryVisible(true)
-            }
-            Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                Box(modifier = Modifier.weight(1f)) {
-                    WateringHistoryPage(
-                        historyState = wateringHistory,
-                        suppressEmptyState = isDevicesLoading || showBackendUnavailable,
-                        onSuccessfulOnlyChange = { viewModel.setWateringHistorySuccessfulOnly(it) },
-                    )
+        },
+    ) { padding ->
+        when {
+            devices.isEmpty() && loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            devices.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Text(error ?: "No devices") }
+            else -> {
+                val initial = devices.indexOfFirst { it.id == selected }.coerceAtLeast(0)
+                val pager = rememberPagerState(initialPage = initial, pageCount = { devices.size })
+                LaunchedEffect(pager.currentPage, devices) {
+                    viewModel.setActiveDevice(devices.getOrNull(pager.currentPage))
                 }
-                Text(
-                    text = "1 / 1",
-                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            return@Scaffold
-        }
-
-        val initialPage = devices.indexOfFirst { it.name == selectedDeviceName }.coerceAtLeast(0)
-        val pagerState = rememberPagerState(
-            initialPage = initialPage,
-            pageCount = { devices.size + 1 }
-        )
-        LaunchedEffect(pagerState.currentPage, devices) {
-            viewModel.setActiveDevice(devices.getOrNull(pagerState.currentPage))
-            viewModel.setWateringHistoryVisible(pagerState.currentPage == devices.size)
-        }
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            if (globalError != null && !showBackendUnavailable) {
-                Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                    run {
-                        Text(
-                            text = globalError!!,
-                            modifier = Modifier.padding(8.dp).fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.labelSmall
+                Column(Modifier.fillMaxSize().padding(padding)) {
+                    error?.let { ErrorBanner(it) }
+                    HorizontalPager(
+                        state = pager,
+                        modifier = Modifier.weight(1f),
+                        key = { devices[it].id },
+                    ) { page ->
+                        val device = devices[page]
+                        DeviceCardPage(
+                            device = device,
+                            state = cards[device.id] ?: CardUiState(),
+                            pendingActions = pendingActions,
+                            loadingBlocks = loadingBlocks,
+                            onRefresh = { viewModel.refreshCard(device) },
+                            onOpenBlock = { blockId -> viewModel.setOpenBlock(device.id, blockId) },
+                            onAction = viewModel::performAction,
                         )
                     }
-                }
-            }
-
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f),
-                key = { page -> if (page < devices.size) devices[page].name else "watering-history" }
-            ) { page ->
-                if (page < devices.size) {
-                    val device = devices[page]
-                    val uiState = deviceStates[device.name] ?: DeviceUIState()
-                    DevicePage(
-                        device = device,
-                        uiState = uiState,
-                        wateringParameters = wateringParameters[device.name],
-                        onLoadWateringParameters = { viewModel.loadWateringParameters(device) },
-                        onSaveWateringParameters = { dry, wet, threshold ->
-                            viewModel.saveWateringParameters(device, dry, wet, threshold)
-                        },
-                        onStartWatering = { grams -> viewModel.startWatering(device, grams) },
-                        onStopWatering = { viewModel.stopWatering(device) },
-                        onOpenControl = { viewModel.openDeviceControl(device) },
-                        onOpenDetectedWaterings = {
-                            viewModel.openDetectedWateringHistory(device)
-                        }
-                    )
-                } else {
-                    WateringHistoryPage(
-                        historyState = wateringHistory,
-                        suppressEmptyState = showBackendUnavailable,
-                        onSuccessfulOnlyChange = { viewModel.setWateringHistorySuccessfulOnly(it) }
+                    Text(
+                        "${pager.currentPage + 1} / ${devices.size}",
+                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(12.dp),
                     )
                 }
             }
-            Text(
-                text = "${pagerState.currentPage + 1} / ${devices.size + 1}",
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(16.dp),
-                style = MaterialTheme.typography.bodyMedium
-            )
         }
     }
 }
 
 @Composable
-private fun VersionInfoButton(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier,
-) {
-    var showDialog by remember { mutableStateOf(false) }
-    val latestRelease by viewModel.latestAppRelease.collectAsState()
-    val isLoading by viewModel.isAppReleaseLoading.collectAsState()
-    val releaseError by viewModel.appReleaseError.collectAsState()
-    val context = LocalContext.current
-
-    IconButton(
-        onClick = {
-            showDialog = true
-            viewModel.refreshAppRelease()
-        },
-        modifier = modifier,
-    ) {
-        Icon(Icons.Default.Info, contentDescription = "Информация о версии")
+private fun ErrorBanner(message: String) {
+    Surface(color = MaterialTheme.colorScheme.errorContainer) {
+        Text(message, Modifier.fillMaxWidth().padding(8.dp), color = MaterialTheme.colorScheme.onErrorContainer)
     }
+}
 
-    if (showDialog) {
-        AlertDialog(
-            onDismissRequest = { showDialog = false },
-            title = { Text("Версия приложения") },
-            text = {
-                VersionInfoContent(
-                    latestRelease = latestRelease,
-                    isLoading = isLoading,
-                    error = releaseError,
-                )
-            },
-            confirmButton = {
-                if (latestRelease?.versionCode?.let { it > BuildConfig.VERSION_CODE } == true) {
-                    TextButton(
+@Composable
+private fun DeviceCardPage(
+    device: Device,
+    state: CardUiState,
+    pendingActions: Set<String>,
+    loadingBlocks: Set<String>,
+    onRefresh: () -> Unit,
+    onOpenBlock: (String?) -> Unit,
+    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+        elevation = CardDefaults.cardElevation(4.dp),
+    ) {
+        when {
+            state.card == null && state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            state.card == null -> Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(state.error ?: "Card is unavailable", color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(12.dp)); OutlinedButton(onClick = onRefresh) { Text("Retry") }
+            }
+            else -> Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                val blocks = state.card.blocks
+                val overview = blocks.firstOrNull { it.kind == "device_overview" }
+                val operationQueue = blocks.firstOrNull { it.kind == "operation_queue" }
+                val menuBlocks = blocks.filter { it.slot in setOf("control", "watering_parameters", "history") }
+                val inlineBlocks = blocks.filterNot { it == overview || it == operationQueue || it in menuBlocks }
+                var openBlockId by remember(device.id) { mutableStateOf<String?>(null) }
+
+                state.error?.let { ErrorBanner(it) }
+                overview?.let { OverviewHeader(it) }
+                overview?.let { OverviewValue(it) }
+                menuBlocks.forEach { block ->
+                    OutlinedButton(
                         onClick = {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_VIEW,
-                                    requireNotNull(latestRelease).downloadUrl.toUri(),
-                                )
-                            )
+                            openBlockId = if (openBlockId == block.id) null else block.id
+                            onOpenBlock(openBlockId)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = if (openBlockId == block.id) {
+                            ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        } else {
+                            ButtonDefaults.outlinedButtonColors()
+                        },
+                    ) { Text(block.title ?: block.id) }
+                }
+                operationQueue?.let { block ->
+                    key(block.id) { CardBlockRenderer(device.id, block, pendingActions, onAction) }
+                }
+                menuBlocks.firstOrNull { it.id == openBlockId }?.let { block ->
+                    key(block.id) {
+                        if ("${device.id}:${block.id}" in loadingBlocks) {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        } else {
+                            CardBlockRenderer(device.id, block, pendingActions, onAction)
                         }
-                    ) {
-                        Text("Скачать")
                     }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDialog = false }) {
-                    Text("Закрыть")
+                overview?.let { OverviewStatistics(it) }
+                inlineBlocks.forEach { block ->
+                    key(block.id) { CardBlockRenderer(device.id, block, pendingActions, onAction) }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardBlockRenderer(
+    deviceId: String,
+    block: CardBlock,
+    pendingActions: Set<String>,
+    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+) {
+    when (block.kind) {
+        "device_overview" -> {
+            OverviewHeader(block)
+            OverviewValue(block)
+            OverviewStatistics(block)
+        }
+        "dynamic_form" -> DynamicFormBlock(deviceId, block, pendingActions, onAction)
+        "history" -> HistoryBlock(deviceId, block, pendingActions, onAction)
+        "operation_queue" -> OperationQueueBlock(deviceId, block, pendingActions, onAction)
+        "progress" -> ProgressBlock(deviceId, block, pendingActions, onAction)
+        "message" -> Text(block.data["message"].asText())
+        else -> if (block.required) {
+            Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
+                Text("App update required: unsupported block ${block.kind}", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OperationQueueBlock(
+    deviceId: String,
+    block: CardBlock,
+    pendingActions: Set<String>,
+    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+) {
+    val items = block.data["items"].asList()
+    BlockSurface(block.title) {
+        if (items.isEmpty()) {
+            Text("No active operations", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text("Active: ${items.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            items.forEach { raw ->
+                val operation = raw.asMap()
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(operation["label"].asText(), fontWeight = FontWeight.Medium)
+                        operation["payload"].asText().takeIf { it.isNotBlank() }?.let { payload ->
+                            Text(
+                                payload,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        operation["created_at"].asNumber()?.let {
+                            Text(formatTimestamp(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Text(operation["status"].asText().replace("_", " ").uppercase(), style = MaterialTheme.typography.labelMedium)
+                    operation["actions"].asList().firstOrNull()?.asControl()?.let { action ->
+                        val actionKey = "$deviceId:${block.id}:${operation["id"].asText()}:${action.id}"
+                        TextButton(
+                            onClick = { action.request?.let { onAction(actionKey, it, emptyMap(), null) } },
+                            enabled = action.enabled && actionKey !in pendingActions,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            if (actionKey in pendingActions) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Text(action.label)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverviewHeader(block: CardBlock) {
+    val status = block.data["status"].asMap()
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val severity = status["severity"].asText()
+            val color = when (severity) {
+                "success" -> Color(0xFF2E7D32)
+                "error" -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.tertiary
+            }
+            Box(Modifier.size(12.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(8.dp)); Text(status["label"].asText(), color = color)
+        }
+        Text(block.data["title"].asText(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(block.data["subtitle"].asText(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun OverviewValue(block: CardBlock) {
+    val primary = block.data["primary_value"].asMap()
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        val value = primary["value"].asNumber()
+        Text(
+            value?.let { "${formatNumber(it)} ${primary["unit"].asText()}" } ?: "—",
+            fontSize = 64.sp,
+            fontWeight = FontWeight.Black,
+            color = when (primary["tone"].asText()) {
+                "good" -> Color(0xFF2E7D32)
+                "danger" -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.primary
             },
+        )
+        block.data["snapshot_at"].asNumber()?.let {
+            Text("Snapshot: ${formatTimestamp(it)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun OverviewStatistics(block: CardBlock) {
+    val statistics = block.data["statistics"].asList()
+    if (statistics.isEmpty()) return
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            statistics.forEach { statistic ->
+                if (statistic.asMap()["kind"].asText() == "water_consumption") {
+                    WaterConsumption(statistic.asMap()["days"].asList())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WaterConsumption(days: List<Any?>) {
+    Text("Water consumption", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    days.forEach { raw ->
+        val day = raw.asMap()
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(day["date"].asText())
+            Text("Day ${day["day"].asNumber()?.let(::formatNumber) ?: "—"} g · Night ${day["night"].asNumber()?.let(::formatNumber) ?: "—"} g")
+        }
+    }
+}
+
+@Composable
+private fun DynamicFormBlock(
+    deviceId: String,
+    block: CardBlock,
+    pendingActions: Set<String>,
+    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+) {
+    val controls = block.schema?.controls.orEmpty()
+    val serverValues = block.data["values"].asMap()
+    val drafts = remember(deviceId, block.id) { mutableStateMapOf<String, String>() }
+    val dirty = remember(deviceId, block.id) { mutableStateMapOf<String, Boolean>() }
+    LaunchedEffect(block) {
+        controls.filter { it.kind == "field" }.forEach { control ->
+            if (dirty[control.id] != true) {
+                drafts[control.id] = (serverValues[control.id] ?: control.default).editableText()
+            }
+        }
+    }
+    BlockSurface(block.title) {
+        controls.forEach { control ->
+            val actionKey = "$deviceId:${block.id}:${control.id}"
+            when (control.kind) {
+                "field" -> FieldControl(
+                    control = control,
+                    value = drafts[control.id].orEmpty(),
+                    onValueChange = { drafts[control.id] = it; dirty[control.id] = true },
+                    pending = actionKey in pendingActions,
+                    onCommit = { request ->
+                        val value = parseValue(drafts[control.id], control.valueType)
+                        dirty[control.id] = false
+                        onAction(actionKey, request, parsedValues(drafts, controls), value)
+                    },
+                )
+                "action" -> ActionControl(
+                    control = control.copy(enabled = control.enabled && actionFieldsValid(
+                        control.request, drafts, controls
+                    )),
+                    currentValue = serverValues[control.id] ?: control.value,
+                    pending = actionKey in pendingActions,
+                    onInvoke = { value -> control.request?.let {
+                        it.body.fields.forEach { field -> dirty[field] = false }
+                        onAction(actionKey, it, parsedValues(drafts, controls), value)
+                    } },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FieldControl(
+    control: CardControl,
+    value: String,
+    onValueChange: (String) -> Unit,
+    pending: Boolean,
+    onCommit: (CardRequest) -> Unit,
+) {
+    when (control.controlType) {
+        "readonly.v1" -> OutlinedTextField(
+            value = value, onValueChange = {}, readOnly = true,
+            label = { Text(control.label) }, suffix = control.unit?.let { { Text(it) } },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        "select.v1" -> {
+            Text(control.label, style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                control.options.forEach { option ->
+                    FilterChip(selected = value == option.value, onClick = { onValueChange(option.value) }, label = { Text(option.label) })
+                }
+            }
+        }
+        else -> OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = control.enabled && !pending,
+            label = { Text(control.label) },
+            suffix = control.unit?.let { { Text(it) } },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (control.controlType == "number_input.v1") KeyboardType.Number else KeyboardType.Text
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+    }
+    control.commit?.let { commit ->
+        OutlinedButton(
+            onClick = { onCommit(commit.request) },
+            enabled = control.enabled && !pending && controlValueValid(control, value),
+            modifier = Modifier.fillMaxWidth(),
+        ) { if (pending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(commit.label) }
+    }
+}
+
+@Composable
+private fun ActionControl(
+    control: CardControl,
+    currentValue: Any?,
+    pending: Boolean,
+    onInvoke: (Any?) -> Unit,
+) {
+    val enabled = control.enabled && !pending
+    when (control.controlType) {
+        "action_toggle.v1" -> Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(control.label)
+            Switch(checked = currentValue as? Boolean ?: false, onCheckedChange = onInvoke, enabled = enabled)
+        }
+        "hold_action.v1" -> HoldActionButton(control.label, control.preset, enabled) { onInvoke(null) }
+        "button.v1" -> Button(
+            onClick = { onInvoke(null) }, enabled = enabled, modifier = Modifier.fillMaxWidth(),
+            colors = if (control.style == "danger") ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors(),
+        ) { if (pending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(control.label) }
+        else -> Text("Unsupported control: ${control.controlType}", color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun HoldActionButton(label: String, preset: String?, enabled: Boolean, onConfirmed: () -> Unit) {
+    val duration = when (preset) {
+        "zero_capture_hold.v1" -> 2000
+        "calibration_hold.v1" -> 3000
+        "history_delete_hold.v1" -> 5000
+        else -> 2000
+    }
+    val progress = remember { Animatable(0f) }
+    Surface(
+        color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth().height(48.dp).pointerInput(enabled, preset) {
+            detectTapGestures(onPress = {
+                if (!enabled) { tryAwaitRelease(); return@detectTapGestures }
+                coroutineScope {
+                    var confirmed = false
+                    val job = launch {
+                        progress.snapTo(0f)
+                        progress.animateTo(1f, tween(duration))
+                        confirmed = true
+                        onConfirmed()
+                    }
+                    tryAwaitRelease()
+                    if (!confirmed) { job.cancel(); progress.snapTo(0f) }
+                }
+            })
+        },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            LinearProgressIndicator(
+                progress = { progress.value },
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.tertiary,
+                trackColor = Color.Transparent,
+            )
+            Text("Hold: $label", fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun ProgressBlock(
+    deviceId: String,
+    block: CardBlock,
+    pendingActions: Set<String>,
+    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+) {
+    BlockSurface(block.title) {
+        Text(block.data["label"].asText(), fontWeight = FontWeight.Bold)
+        block.data["target"].asNumber()?.let { Text("Target: ${formatNumber(it)} ${block.data["unit"].asText()}") }
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+        block.schema?.controls.orEmpty().forEach { control ->
+            val key = "$deviceId:${block.id}:${control.id}"
+            ActionControl(control, control.value, key in pendingActions) { value ->
+                control.request?.let { onAction(key, it, emptyMap(), value) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryBlock(
+    deviceId: String,
+    block: CardBlock,
+    pendingActions: Set<String>,
+    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+) {
+    val items = block.data["items"].asList()
+    BlockSurface(block.title) {
+        if (items.isEmpty()) Text("No watering history", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        items.forEach { raw ->
+            val item = raw.asMap()
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item["occurred_at"].asNumber()?.let { Text(formatTimestamp(it), fontWeight = FontWeight.Bold) }
+                    Text("Added: ${item["amount_g"].asNumber()?.let(::formatNumber) ?: "—"} g")
+                    Text("Weight: ${item["weight_before_g"].asNumber()?.let(::formatNumber) ?: "—"} → ${item["weight_after_g"].asNumber()?.let(::formatNumber) ?: "—"} g")
+                    item["actions"].asList().forEach { actionRaw ->
+                        val action = actionRaw.asControl() ?: return@forEach
+                        val key = "$deviceId:${block.id}:${item["id"].asText()}:${action.id}"
+                        ActionControl(action, action.value, key in pendingActions) { value ->
+                            action.request?.let { onAction(key, it, emptyMap(), value) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlockSurface(title: String?, content: @Composable ColumnScope.() -> Unit) {
+    Surface(Modifier.fillMaxWidth(), tonalElevation = 1.dp, shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            title?.let { Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            content()
+        }
+    }
+}
+
+private fun parsedValues(drafts: SnapshotStateMap<String, String>, controls: List<CardControl>): Map<String, Any?> =
+    controls.filter { it.kind == "field" }.associate { control ->
+        control.id to parseValue(drafts[control.id], control.valueType)
+    }
+
+private fun actionFieldsValid(
+    request: CardRequest?,
+    drafts: SnapshotStateMap<String, String>,
+    controls: List<CardControl>,
+): Boolean {
+    val fields = request?.body?.fields.orEmpty()
+    if (fields.isEmpty()) return true
+    return fields.all { field ->
+        controls.firstOrNull { it.id == field }?.let { control ->
+            controlValueValid(control, drafts[field].orEmpty())
+        } == true
+    }
+}
+
+private fun controlValueValid(control: CardControl, value: String): Boolean {
+    if (value.isBlank()) return false
+    if (control.valueType !in setOf("integer", "decimal")) return true
+    val number = value.toDoubleOrNull() ?: return false
+    val min = control.constraints["min"].asNumber()
+    val max = control.constraints["max"].asNumber()
+    val minExclusive = control.constraints["min_exclusive"].asNumber()
+    return (min == null || number >= min) &&
+        (max == null || number <= max) &&
+        (minExclusive == null || number > minExclusive)
+}
+
+private fun parseValue(value: String?, valueType: String?): Any? = when (valueType) {
+    "integer" -> value?.toIntOrNull()
+    "decimal" -> value?.toDoubleOrNull()
+    "boolean" -> value?.toBooleanStrictOrNull()
+    else -> value
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun Any?.asMap(): Map<String, Any?> = this as? Map<String, Any?> ?: emptyMap()
+@Suppress("UNCHECKED_CAST")
+private fun Any?.asList(): List<Any?> = this as? List<Any?> ?: emptyList()
+private fun Any?.asText(): String = this?.toString().orEmpty()
+private fun Any?.asNumber(): Double? = (this as? Number)?.toDouble()
+private fun Any?.editableText(): String = when (this) {
+    null -> ""
+    is Double -> if (this % 1.0 == 0.0) toLong().toString() else toString()
+    else -> toString()
+}
+private fun formatNumber(value: Double): String = if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.2f", value)
+private fun formatTimestamp(epochSeconds: Double): String = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date((epochSeconds * 1000).toLong()))
+
+private fun Any?.asControl(): CardControl? {
+    val map = asMap()
+    val requestMap = map["request"].asMap()
+    val bodyMap = requestMap["body"].asMap()
+    val request = if (requestMap.isEmpty()) null else CardRequest(
+        method = requestMap["method"].asText(),
+        href = requestMap["href"].asText(),
+        body = CardRequestBodyBinding(
+            binding = bodyMap["binding"].asText(),
+            property = bodyMap["property"]?.toString(),
+            fields = bodyMap["fields"].asList().map { it.asText() },
+            value = bodyMap["value"].asMap(),
+            literal = bodyMap["literal"].asMap(),
+        ),
+    )
+    return map["id"]?.toString()?.let {
+        CardControl(
+            kind = "action", id = it, label = map["label"].asText(),
+            controlType = map["control_type"].asText(), preset = map["preset"]?.toString(),
+            enabled = map["enabled"] as? Boolean ?: true, request = request, value = map["value"],
         )
     }
 }
 
 @Composable
-private fun VersionInfoContent(
-    latestRelease: AppRelease?,
-    isLoading: Boolean,
-    error: String?,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Текущая версия: ${BuildConfig.VERSION_NAME}")
-        when {
-            latestRelease != null && latestRelease.versionCode > BuildConfig.VERSION_CODE -> {
-                Text("Последняя: ${latestRelease.versionName}")
-                Text(
-                    "Доступно обновление",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            latestRelease != null -> {
-                Text(
-                    "Актуальная версия",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            isLoading -> {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Проверяем доступную версию…")
-                }
-            }
-            error != null -> {
-                Text(
-                    "Не удалось проверить обновления",
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            else -> Text("Доступная версия пока не определена")
-        }
+private fun VersionInfoButton(viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    val release by viewModel.latestAppRelease.collectAsState()
+    val loading by viewModel.isAppReleaseLoading.collectAsState()
+    val error by viewModel.appReleaseError.collectAsState()
+    val context = LocalContext.current
+    IconButton(onClick = { open = true; viewModel.refreshAppRelease() }, modifier = modifier) {
+        Icon(Icons.Default.Info, contentDescription = "App version")
     }
-}
-
-private fun parameterDate(epochSeconds: Double?): String = epochSeconds?.let {
-    SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date((it * 1000).toLong()))
-} ?: "Never updated"
-
-private fun weightAboveWateringThresholdG(
-    grossWeightG: Double?,
-    dryWeightG: Int?,
-    wetWeightG: Int?,
-    waterLossPercent: Int?,
-): Int? {
-    if (
-        grossWeightG == null || dryWeightG == null || wetWeightG == null ||
-        waterLossPercent == null || wetWeightG <= dryWeightG || waterLossPercent !in 0..100
-    ) {
-        return null
-    }
-    return (
-        grossWeightG - dryWeightG -
-            (wetWeightG - dryWeightG) * waterLossPercent / 100.0
-        ).roundToInt()
-}
-
-@Composable
-private fun HoldToConfirmButton(
-    label: String,
-    enabled: Boolean,
-    onConfirmed: () -> Unit,
-) {
-    val coroutineScope = rememberCoroutineScope()
-    Surface(
-        color = if (enabled) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (enabled) MaterialTheme.colorScheme.onPrimary
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = MaterialTheme.shapes.small,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .pointerInput(enabled, onConfirmed) {
-                detectTapGestures(
-                    onPress = {
-                        if (!enabled) {
-                            tryAwaitRelease()
-                            return@detectTapGestures
-                        }
-                        val confirmationJob = coroutineScope.launch {
-                            delay(3.seconds)
-                            onConfirmed()
-                        }
-                        tryAwaitRelease()
-                        confirmationJob.cancel()
-                    }
-                )
-            }
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text("Hold 3 sec: $label", fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
-@Composable
-private fun WateringParametersDialog(
-    grossWeightG: Double?,
-    controllerDryWeightG: Double?,
-    controllerWetWeightG: Double?,
-    controllerWaterLossThresholdPercent: Double?,
-    parameters: WateringParameters?,
-    onLoad: () -> Unit,
-    onSave: (Int?, Int?, Int?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var dry by remember { mutableStateOf("") }
-    var wet by remember { mutableStateOf("") }
-    var threshold by remember { mutableStateOf("") }
-    var dryDirty by remember { mutableStateOf(false) }
-    var wetDirty by remember { mutableStateOf(false) }
-    var thresholdDirty by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { onLoad() }
-    LaunchedEffect(
-        parameters,
-        controllerDryWeightG,
-        controllerWetWeightG,
-        controllerWaterLossThresholdPercent,
-    ) {
-        if (!dryDirty) {
-            dry = parameters?.dryWeightG?.toString()
-                ?: controllerDryWeightG?.roundToInt()?.toString()
-                ?: ""
-        }
-        if (!wetDirty) {
-            wet = parameters?.wetWeightG?.toString()
-                ?: controllerWetWeightG?.roundToInt()?.toString()
-                ?: ""
-        }
-        if (!thresholdDirty) {
-            threshold = parameters?.wateringLossThresholdPercent?.toString()
-                ?: controllerWaterLossThresholdPercent?.roundToInt()?.toString()
-                ?: ""
-        }
-    }
-    val dryValue = dry.toIntOrNull()
-    val wetValue = wet.toIntOrNull()
-    val thresholdValue = threshold.toIntOrNull()
-    val hasChanges = dryDirty || wetDirty || thresholdDirty
-    val changedValuesAreValid =
-        (!dryDirty || dryValue != null && dryValue >= 0) &&
-        (!wetDirty || wetValue != null && wetValue >= 0) &&
-        (!thresholdDirty || thresholdValue != null && thresholdValue in 0..100)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Watering parameters") },
+    if (open) AlertDialog(
+        onDismissRequest = { open = false },
+        title = { Text("App version") },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = grossWeightG?.roundToInt()?.toString() ?: "No data",
-                    onValueChange = {}, readOnly = true, label = { Text("Raw weight (gross), g") },
-                )
-                OutlinedTextField(
-                    value = dry, onValueChange = { dry = it; dryDirty = true }, label = { Text("Dry weight, g") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-                Text("Updated: ${parameterDate(parameters?.dryWeightUpdatedAt)}", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(
-                    value = wet, onValueChange = { wet = it; wetDirty = true }, label = { Text("Wet weight, g") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-                Text("Updated: ${parameterDate(parameters?.wetWeightUpdatedAt)}", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(
-                    value = threshold, onValueChange = { threshold = it; thresholdDirty = true },
-                    label = { Text("Water loss threshold, %") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Current: ${BuildConfig.VERSION_NAME}")
+                when {
+                    release != null -> Text("Latest: ${release!!.versionName}")
+                    loading -> CircularProgressIndicator()
+                    error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
             }
         },
         confirmButton = {
-            TextButton(
-                enabled = hasChanges && changedValuesAreValid,
-                onClick = {
-                    onSave(
-                        dryValue.takeIf { dryDirty },
-                        wetValue.takeIf { wetDirty },
-                        thresholdValue.takeIf { thresholdDirty },
-                    )
-                    onDismiss()
-                },
-            ) { Text("Save") }
+            if (release?.versionCode?.let { it > BuildConfig.VERSION_CODE } == true) TextButton(onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, requireNotNull(release).downloadUrl.toUri()))
+            }) { Text("Download") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = { open = false }) { Text("Close") } },
     )
-}
-
-@Composable
-fun DevicePage(
-    device: Device,
-    uiState: DeviceUIState,
-    wateringParameters: WateringParameters?,
-    onLoadWateringParameters: () -> Unit,
-    onSaveWateringParameters: (Int?, Int?, Int?) -> Unit,
-    onStartWatering: (Double) -> Unit,
-    onStopWatering: () -> Unit,
-    onOpenControl: () -> Unit,
-    onOpenDetectedWaterings: () -> Unit
-) {
-    var showWateringParameters by remember(device.name) { mutableStateOf(false) }
-    LaunchedEffect(device.name, device.type) {
-        if (device.type == DeviceType.PLANT.apiValue) onLoadWateringParameters()
-    }
-    if (showWateringParameters) {
-        WateringParametersDialog(
-            grossWeightG = uiState.latestStatus?.result?.weight?.grossWeightG,
-            controllerDryWeightG = uiState.latestStatus?.result?.config?.dryWeightG,
-            controllerWetWeightG = uiState.latestStatus?.result?.config?.wetWeightG,
-            controllerWaterLossThresholdPercent =
-                uiState.latestStatus?.result?.config?.wateringLossThresholdPercent,
-            parameters = wateringParameters,
-            onLoad = onLoadWateringParameters,
-            onSave = onSaveWateringParameters,
-            onDismiss = { showWateringParameters = false },
-        )
-    }
-    Card(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
-                val statusColor = if (uiState.isOnline) Color.Green else Color.Red
-                val statusText = if (uiState.isOnline) "Online" else "Offline"
-                Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(statusColor))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = statusText, style = MaterialTheme.typography.labelMedium, color = statusColor)
-            }
-
-            Text(
-                "${device.name} (${device.controllerName})",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedButton(onClick = onOpenControl, modifier = Modifier.fillMaxWidth()) {
-                Text("Control")
-            }
-            if (device.type == DeviceType.PLANT.apiValue) {
-                OutlinedButton(
-                    onClick = { showWateringParameters = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Watering parameters")
-                }
-                OutlinedButton(
-                    onClick = onOpenDetectedWaterings,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Watering history")
-                }
-                val weightAboveThreshold = weightAboveWateringThresholdG(
-                    grossWeightG = uiState.latestStatus?.result?.weight?.grossWeightG,
-                    dryWeightG = wateringParameters?.dryWeightG
-                        ?: uiState.latestStatus?.result?.config?.dryWeightG?.roundToInt(),
-                    wetWeightG = wateringParameters?.wetWeightG,
-                    waterLossPercent = wateringParameters?.wateringLossThresholdPercent,
-                )
-                Text(
-                    text = weightAboveThreshold?.let { "$it g" } ?: "—",
-                    modifier = Modifier.padding(top = 14.dp),
-                    style = MaterialTheme.typography.displayLarge,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 64.sp,
-                    color = when {
-                        weightAboveThreshold == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                        weightAboveThreshold > 50 -> Color(0xFF2E7D32)
-                        else -> MaterialTheme.colorScheme.error
-                    },
-                )
-                Text(
-                    text = "Weight above watering threshold",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (uiState.hasPendingControlOperations) {
-                Text(
-                    text = "There are waiting operations",
-                    modifier = Modifier.padding(top = 4.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (device.type == DeviceType.PLANT.apiValue) {
-                SnapshotLabel(uiState.latestStatus)
-                WaterConsumptionBlock(uiState.waterConsumption)
-            } else {
-                TankContent(uiState, onStartWatering, onStopWatering)
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DetectedWateringHistoryScreen(viewModel: MainViewModel, device: Device) {
-    val state by viewModel.detectedWateringHistory.collectAsState()
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
-    var holdingDeleteId by remember { mutableStateOf<Int?>(null) }
-    var holdSecondsLeft by remember { mutableIntStateOf(5) }
-    LaunchedEffect(listState, state.nextOffset) {
-        snapshotFlow {
-            val lastVisible =
-                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible to listState.layoutInfo.totalItemsCount
-        }.distinctUntilChanged().collect { (lastVisible, total) ->
-            if (total > 0 && lastVisible >= total - 3) {
-                viewModel.loadMoreDetectedWaterings(device)
-            }
-        }
-    }
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Waterings: ${device.name}") },
-                navigationIcon = {
-                    IconButton(onClick = { viewModel.closeDetectedWateringHistory() }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            state.error?.let { error ->
-                item {
-                    Text(error, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            if (state.waterings.isEmpty() && !state.isLoading) {
-                item {
-                    Text(
-                        "No detected waterings",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            items(state.waterings, key = { it.id }) { watering ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                SimpleDateFormat(
-                                    "dd.MM.yyyy HH:mm",
-                                    Locale.getDefault()
-                                ).format(Date((watering.occurredAt * 1000).toLong())),
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            Surface(
-                                shape = CircleShape,
-                                color = if (watering.fertilized) Color(0xFF2E7D32)
-                                else MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.size(36.dp).pointerInput(
-                                    watering.id,
-                                    watering.fertilized,
-                                    state.fertilizingId
-                                ) {
-                                    detectTapGestures(
-                                        onPress = {
-                                            if (state.fertilizingId != null) {
-                                                tryAwaitRelease()
-                                                return@detectTapGestures
-                                            }
-                                            val fertilizerJob = coroutineScope.launch {
-                                                delay(3.seconds)
-                                                viewModel.toggleDetectedWateringFertilized(
-                                                    device, watering.id
-                                                )
-                                            }
-                                            tryAwaitRelease()
-                                            fertilizerJob.cancel()
-                                        }
-                                    )
-                                }
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    if (state.fertilizingId == watering.id) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            strokeWidth = 2.dp,
-                                            color = if (watering.fertilized) Color.White
-                                            else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    } else {
-                                        Icon(
-                                            Icons.Filled.Eco,
-                                            contentDescription = if (watering.fertilized) {
-                                                "Fertilizer added; hold to clear"
-                                            } else {
-                                                "No fertilizer; hold to mark"
-                                            },
-                                            tint = if (watering.fertilized) Color.White
-                                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(21.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        Text("Added: ${watering.amountG.roundToInt()} g")
-                        Text(
-                            "Weight: ${watering.weightBeforeG.roundToInt()} → " +
-                                "${watering.weightAfterG.roundToInt()} g",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Surface(
-                            color = Color.Transparent,
-                            modifier = Modifier.pointerInput(
-                                watering.id,
-                                state.deletingId
-                            ) {
-                                detectTapGestures(
-                                    onPress = {
-                                        if (state.deletingId != null) {
-                                            tryAwaitRelease()
-                                            return@detectTapGestures
-                                        }
-                                        holdingDeleteId = watering.id
-                                        holdSecondsLeft = 5
-                                        val deleteJob = coroutineScope.launch {
-                                            for (seconds in 5 downTo 1) {
-                                                holdSecondsLeft = seconds
-                                                delay(1.seconds)
-                                            }
-                                            viewModel.deleteDetectedWatering(
-                                                device, watering.id
-                                            )
-                                        }
-                                        tryAwaitRelease()
-                                        deleteJob.cancel()
-                                        holdingDeleteId = null
-                                        holdSecondsLeft = 5
-                                    }
-                                )
-                            }
-                        ) {
-                            Text(
-                                text = when {
-                                    state.deletingId == watering.id -> "Deleting..."
-                                    holdingDeleteId == watering.id ->
-                                        "Keep holding: ${holdSecondsLeft}s"
-                                    else -> "Hold 5 seconds to delete"
-                                },
-                                modifier = Modifier.padding(
-                                    horizontal = 12.dp,
-                                    vertical = 10.dp
-                                ),
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                                }
-                    }
-                }
-            }
-            if (state.isLoading) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    }
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { viewModel.refreshDetectedWateringHistory(device) },
-                    enabled = !state.isLoading,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Refresh")
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DeviceControlScreen(viewModel: MainViewModel, device: Device) {
-    val focusManager = LocalFocusManager.current
-    val control by viewModel.deviceControl.collectAsState()
-    val deviceTypes by viewModel.deviceTypes.collectAsState()
-    val deviceStates by viewModel.deviceStates.collectAsState()
-    val latestStatus = deviceStates[device.name]?.latestStatus
-    val raw = latestStatus?.result
-    val config = raw?.config
-    val snapshotReceivedAt = latestStatus?.resultReceivedAt ?: 0.0
-    fun confirmedOperation(type: String): OperationResponse? =
-        control.recentOperations.firstOrNull {
-            it.type == type &&
-                it.status == "success" &&
-                it.updatedAt > snapshotReceivedAt
-        }
-    val confirmedConfig = confirmedOperation(OperationType.DEVICE_CONFIG.apiValue)
-    val confirmedSleepInterval = confirmedOperation(OperationType.SLEEP_INTERVAL.apiValue)
-    val confirmedSleep = control.recentOperations.firstOrNull {
-        it.type in listOf(OperationType.SLEEP_ENABLE.apiValue, OperationType.SLEEP_DISABLE.apiValue) &&
-            it.status == "success" &&
-            it.updatedAt > snapshotReceivedAt
-    }
-    val pendingSleepOperation = control.pendingOperations.firstOrNull {
-        it.type == OperationType.SLEEP_ENABLE.apiValue || it.type == OperationType.SLEEP_DISABLE.apiValue
-    }
-    val pendingZeroOperation = control.pendingOperations.firstOrNull { it.type == OperationType.ZERO_CAPTURE.apiValue }
-    val pendingCalibrationOperation = control.pendingOperations.firstOrNull { it.type == OperationType.SCALE_CALIBRATION.apiValue }
-    val actualName = device.name
-    val actualType = confirmedConfig?.deviceType ?: raw?.device?.type ?: device.type
-    val actualTareWeight = confirmedConfig?.tareWeightG ?: config?.tareWeightG
-    val actualSleepMinutes = confirmedSleepInterval?.minutes ?: config?.sleepIntervalMin
-    val actualSleepDisabled = when (confirmedSleep?.type) {
-        OperationType.SLEEP_ENABLE.apiValue -> false
-        OperationType.SLEEP_DISABLE.apiValue -> true
-        else -> config?.sleepDisabled
-    }
-
-    var name by remember(device.name) { mutableStateOf(actualName) }
-    var type by remember(device.name) { mutableStateOf(actualType) }
-    var tareWeight by remember(device.name) { mutableStateOf(actualTareWeight?.roundToInt()?.toString() ?: "") }
-    var sleepMinutes by remember(device.name) { mutableStateOf(actualSleepMinutes?.toString() ?: "") }
-    var sleepDisabled by remember(device.name) { mutableStateOf(actualSleepDisabled) }
-    var calibrationWeight by remember(device.name) { mutableStateOf("") }
-    var configDirty by remember(device.name) { mutableStateOf(false) }
-    var nameAvailable by remember(device.name) { mutableStateOf<Boolean?>(true) }
-    var nameValidationError by remember(device.name) { mutableStateOf<String?>(null) }
-    var nameValidationInProgress by remember(device.name) { mutableStateOf(false) }
-    var sleepIntervalDirty by remember(device.name) { mutableStateOf(false) }
-
-    LaunchedEffect(device.name, name) {
-        val candidate = name.trim()
-        if (candidate == actualName) {
-            nameAvailable = true
-            nameValidationError = null
-            nameValidationInProgress = false
-            return@LaunchedEffect
-        }
-        if (candidate.isEmpty()) {
-            nameAvailable = false
-            nameValidationError = "Name must not be empty"
-            nameValidationInProgress = false
-            return@LaunchedEffect
-        }
-        nameValidationInProgress = true
-        delay(400.milliseconds)
-        viewModel.validateDeviceName(device, candidate) { checkedName, available, error ->
-            if (name.trim() == checkedName) {
-                nameAvailable = available
-                nameValidationError = error
-                nameValidationInProgress = false
-            }
-        }
-    }
-
-    LaunchedEffect(raw, confirmedConfig, confirmedSleepInterval, confirmedSleep) {
-        if (!configDirty) {
-            name = actualName
-            type = actualType
-            actualTareWeight?.let { tareWeight = it.roundToInt().toString() }
-        }
-        if (!sleepIntervalDirty) {
-            actualSleepMinutes?.let { sleepMinutes = it.toString() }
-        }
-        actualSleepDisabled?.let { sleepDisabled = it }
-    }
-    LaunchedEffect(control.message) {
-        if (control.message == "Parameters saved") {
-            configDirty = false
-            sleepIntervalDirty = false
-            name = actualName
-            type = actualType
-            tareWeight = actualTareWeight?.roundToInt()?.toString() ?: ""
-            sleepMinutes = actualSleepMinutes?.toString() ?: sleepMinutes
-        }
-    }
-    LaunchedEffect(device.name) {
-        while (true) {
-            delay(3.seconds)
-            viewModel.refreshDeviceControl(device, showLoading = false)
-        }
-    }
-
-    fun pendingValue(selector: (OperationResponse) -> Any?): String? =
-        control.pendingOperations.firstNotNullOfOrNull { operation ->
-            when (val value = selector(operation)) {
-                is Number -> "${operationStatusLabel(operation)}: ${value.toDouble().roundToInt()}"
-                null -> null
-                else -> "${operationStatusLabel(operation)}: $value"
-            }
-        }
-    fun pendingChangedValue(
-        appliedValue: Any?,
-        selector: (OperationResponse) -> Any?,
-    ): String? = control.pendingOperations.firstNotNullOfOrNull { operation ->
-        val requestedValue = selector(operation) ?: return@firstNotNullOfOrNull null
-        val unchanged = when {
-            requestedValue is Number && appliedValue is Number ->
-                requestedValue.toDouble() == appliedValue.toDouble()
-            else -> requestedValue == appliedValue
-        }
-        if (unchanged) {
-            null
-        } else {
-            val displayedValue = if (requestedValue is Number) {
-                requestedValue.toDouble().roundToInt()
-            } else {
-                requestedValue
-            }
-            "${operationStatusLabel(operation)}: $displayedValue"
-        }
-    }
-    val activeQueueCount = control.pendingOperations.count {
-        it.status in listOf("queued", "sending", "accepted", "running")
-    }
-
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Control: ${device.name}") },
-                navigationIcon = {
-                    IconButton(onClick = { viewModel.closeDeviceControl() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text("Device parameters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Backend: ${device.name} (MCU: ${device.controllerName})",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            ControlField(
-                value = name,
-                onValueChange = {
-                    name = it
-                    configDirty = true
-                    nameAvailable = null
-                    nameValidationError = null
-                },
-                label = "Name",
-                pending = pendingChangedValue(actualName) { it.backendName },
-                error = nameValidationError,
-            )
-            DeviceTypeField(
-                value = type,
-                options = deviceTypes,
-                onValueChange = { type = it; configDirty = true },
-                pending = pendingChangedValue(actualType) { it.deviceType }
-            )
-            if (type != DeviceType.PLANT.apiValue) {
-                ControlField(
-                    tareWeight,
-                    { tareWeight = it; configDirty = true },
-                    "Tare weight (g)",
-                    pendingChangedValue(actualTareWeight) { it.tareWeightG },
-                    true
-                )
-            }
-            HorizontalDivider()
-            Text("Sleep", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Box(modifier = Modifier.fillMaxWidth().height(20.dp)) {
-                (pendingSleepOperation ?: confirmedSleep)?.let {
-                    val mode = if (it.type == OperationType.SLEEP_ENABLE.apiValue) "enabled" else "disabled"
-                    Text(
-                        text = "${operationStatusLabel(it)}: sleep $mode",
-                        color = operationStatusColor(it),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Sleep mode", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        when (sleepDisabled) {
-                            false -> "Enabled"
-                            true -> "Disabled"
-                            null -> "No data"
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                Switch(
-                    checked = sleepDisabled == false,
-                    onCheckedChange = { enabled ->
-                        if (sleepDisabled != null && enabled != !sleepDisabled!!) {
-                            viewModel.setSleep(device, enabled)
-                        }
-                    },
-                    enabled = sleepDisabled != null &&
-                        pendingSleepOperation?.status !in listOf("queued", "sending", "accepted", "running")
-                )
-            }
-            ControlField(
-                sleepMinutes,
-                { sleepMinutes = it; sleepIntervalDirty = true },
-                "Sleep interval (min)",
-                pendingChangedValue(actualSleepMinutes) { it.minutes },
-                true
-            )
-            Button(
-                onClick = {
-                    focusManager.clearFocus(force = true)
-                    val tare = tareWeight.toIntOrNull()
-                    val interval = sleepMinutes.toIntOrNull()
-                    if (type != DeviceType.PLANT.apiValue && tare == null) return@Button
-                    if (sleepIntervalDirty && (interval == null || interval !in 1..50)) return@Button
-                    viewModel.updateDeviceConfig(
-                        device,
-                        type,
-                        name,
-                        tare,
-                        actualTareWeight?.roundToInt(),
-                        interval,
-                        actualSleepMinutes,
-                    )
-                },
-                enabled = (configDirty || sleepIntervalDirty) &&
-                    name.isNotBlank() && nameAvailable == true &&
-                    !nameValidationInProgress && type in deviceTypes &&
-                    (type == DeviceType.PLANT.apiValue || tareWeight.toIntOrNull() != null) &&
-                    (!sleepIntervalDirty || (sleepMinutes.toIntOrNull() ?: 0) in 1..50),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Save parameters") }
-            HorizontalDivider()
-            Text("Scale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            HoldToConfirmButton(
-                label = "Set zero",
-                enabled = true,
-                onConfirmed = { viewModel.captureZero(device) },
-            )
-            PendingCommandMarker(pendingZeroOperation, "Set zero")
-            ControlField(
-                calibrationWeight,
-                { calibrationWeight = it },
-                "Calibration weight (g)",
-                pendingValue { it.weightG },
-                true
-            )
-            HoldToConfirmButton(
-                label = "Calibrate",
-                onConfirmed = {
-                    calibrationWeight.toIntOrNull()?.let {
-                        calibrationWeight = ""
-                        viewModel.calibrate(device, it.toDouble())
-                    }
-                },
-                enabled = (calibrationWeight.toIntOrNull() ?: 0) > 0,
-            )
-            PendingCommandMarker(pendingCalibrationOperation, "Calibration")
-
-            HorizontalDivider()
-            Text("Operations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (control.pendingOperations.isEmpty()) {
-                Text(
-                    "No active or failed operations",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            } else {
-                control.pendingOperations.forEach { operation ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "${operation.type.replace('_', ' ')} - ${operationStatusLabel(operation)}",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            color = if (operation.status in listOf("error", "timeout")) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-            OutlinedButton(
-                onClick = { viewModel.clearDeviceQueue(device) },
-                enabled = true,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Clear queue ($activeQueueCount)") }
-            OutlinedButton(
-                onClick = { viewModel.refreshDeviceControl(device) },
-                enabled = true,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Refresh") }
-        }
-    }
-}
-
-@Composable
-private fun ControlField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    pending: String?,
-    numeric: Boolean = false,
-    error: String? = null,
-    onFocusLost: (() -> Unit)? = null,
-) {
-    var hadFocus by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        isError = error != null,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
-            imeAction = ImeAction.Done,
-        ),
-        keyboardActions = KeyboardActions(
-            onDone = { focusManager.clearFocus(force = true) },
-        ),
-        supportingText = {
-            if (error != null) {
-                Text(error, color = MaterialTheme.colorScheme.error)
-            } else if (pending == null) {
-                Text(" ", style = MaterialTheme.typography.labelSmall)
-            } else {
-                PendingValue(pending)
-            }
-        },
-        singleLine = true,
-        modifier = Modifier
-            .fillMaxWidth()
-            .onFocusChanged { state ->
-                if (state.isFocused) {
-                    hadFocus = true
-                } else if (hadFocus) {
-                    hadFocus = false
-                    onFocusLost?.invoke()
-                }
-            }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DeviceTypeField(
-    value: String,
-    options: List<String>,
-    onValueChange: (String) -> Unit,
-    pending: String?
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Type") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            supportingText = {
-                if (pending == null) Text(" ", style = MaterialTheme.typography.labelSmall)
-                else PendingValue(pending)
-            },
-            modifier = Modifier
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
-                .fillMaxWidth()
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        onValueChange(option)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PendingValue(value: String) {
-    Text(value, color = MaterialTheme.colorScheme.tertiary)
-}
-
-@Composable
-private fun PendingCommandMarker(operation: OperationResponse?, action: String) {
-    Box(modifier = Modifier.fillMaxWidth().height(20.dp)) {
-        operation?.let {
-            Text(
-                text = "${operationStatusLabel(it)}: $action",
-                color = operationStatusColor(it),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-}
-
-private fun operationStatusLabel(operation: OperationResponse): String = when (operation.status) {
-    "queued" -> "Queued"
-    "sending" -> "Sending"
-    "accepted" -> "Accepted"
-    "running" -> "Running"
-    "error" -> operation.error?.message?.let { "Error: $it" } ?: "Error"
-    "timeout" -> operation.error?.message?.let { "Timeout: $it" } ?: "Timeout"
-    else -> operation.status.replaceFirstChar { it.uppercase() }
-}
-
-@Composable
-private fun operationStatusColor(operation: OperationResponse): Color =
-    if (operation.status in listOf("error", "timeout")) MaterialTheme.colorScheme.error
-    else MaterialTheme.colorScheme.tertiary
-
-private fun formatSnapshotReceivedAt(epochSeconds: Double): String {
-    val timestamp = Date((epochSeconds * 1000).toLong())
-    val snapshotDay = Calendar.getInstance().apply { time = timestamp }
-    val today = Calendar.getInstance()
-    val isToday = snapshotDay.get(Calendar.YEAR) == today.get(Calendar.YEAR)
-        && snapshotDay.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
-    val pattern = if (isToday) "HH:mm:ss" else "EEE, dd.MM.yyyy HH:mm:ss"
-    return SimpleDateFormat(pattern, Locale.getDefault()).format(timestamp)
-}
-
-@Composable
-fun TankContent(
-    uiState: DeviceUIState,
-    onStartWatering: (Double) -> Unit,
-    onStopWatering: () -> Unit
-) {
-    var amountText by remember { mutableStateOf("200") }
-    val activeOp = uiState.activeOperation
-    val latestStatus = uiState.latestStatus
-    val rawStatus = latestStatus?.result
-    val isTrackedWatering = activeOp != null && uiState.isWateringTask
-    val isControllerWatering = uiState.wateringStatus?.source == "live" && uiState.wateringStatus.active
-    val isWateringActive = isTrackedWatering || isControllerWatering
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        TankInfoBlock(rawStatus)
-        SnapshotLabel(latestStatus)
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
-        TankOperationBlock(
-            amountText = amountText,
-            onAmountChange = { amountText = it },
-            activeOperation = if (uiState.isWateringTask) activeOp else null,
-            activeOperationEvents = uiState.activeOperationEvents,
-            isWateringActive = isWateringActive,
-            controllerWateringState = uiState.wateringStatus?.state,
-            wateringStatus = uiState.wateringStatus,
-            plannedWatering = uiState.plannedWatering,
-            onStartWatering = onStartWatering,
-            onStopWatering = onStopWatering
-        )
-    }
-}
-
-@Composable
-private fun SnapshotLabel(latestStatus: LatestStatusResponse?) {
-    if (latestStatus?.source == "snapshot") {
-        latestStatus.resultReceivedAt?.let {
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = "Snapshot: ${formatSnapshotReceivedAt(it)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray
-            )
-        }
-    }
-}
-
-@Composable
-fun TankInfoBlock(rawStatus: RawDeviceStatus?) {
-    val gross = rawStatus?.weight?.grossWeightG
-    val tare = rawStatus?.config?.tareWeightG
-    val water = if (gross != null && tare != null) gross - tare else null
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Water Weight", style = MaterialTheme.typography.labelSmall)
-        Text(
-            text = water?.let { "${it.toInt()} g" } ?: "N/A",
-            style = MaterialTheme.typography.displayMedium.copy(fontSize = 50.sp),
-            fontWeight = FontWeight.Black,
-            color = if (water != null && water < 100.0) Color.Red else Color(0xFF2196F3)
-        )
-    }
-}
-
-@Composable
-fun WaterConsumptionBlock(days: List<WaterConsumptionDay>) {
-    val rows = (days + List(7) { WaterConsumptionDay("", null, null) }).take(7)
-
-    Spacer(modifier = Modifier.height(14.dp))
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 150.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        rows.forEach { values ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                WaterConsumptionCell(
-                    values.day,
-                    values.dayBelowWeeklyMedian,
-                    Color(0xFF4CAF50),
-                    Modifier.weight(1f)
-                )
-                WaterConsumptionCell(
-                    values.night,
-                    values.nightBelowWeeklyMedian,
-                    Color.Gray,
-                    Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WaterConsumptionCell(
-    value: Double?,
-    belowWeeklyMedian: Boolean,
-    arrowColor: Color,
-    modifier: Modifier
-) {
-    Box(
-        modifier = modifier.height(46.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (value != null && value < 0) {
-                    Icons.Default.KeyboardArrowDown
-                } else {
-                    Icons.Default.KeyboardArrowUp
-                },
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = if (belowWeeklyMedian) MaterialTheme.colorScheme.error else arrowColor
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            if (value != null) {
-                Text(
-                    text = "${formatConsumption(kotlin.math.abs(value))} g",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            } else {
-                Text(
-                    text = "-",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-private fun formatConsumption(value: Double): String =
-    if (value % 1.0 == 0.0) value.toInt().toString() else String.format(Locale.US, "%.2f", value)
-
-@Composable
-fun TankOperationBlock(
-    amountText: String,
-    onAmountChange: (String) -> Unit,
-    activeOperation: OperationResponse?,
-    activeOperationEvents: List<OperationEvent>,
-    isWateringActive: Boolean,
-    controllerWateringState: String?,
-    wateringStatus: WateringStatus?,
-    plannedWatering: PlannedWatering?,
-    onStartWatering: (Double) -> Unit,
-    onStopWatering: () -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Watering", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(12.dp))
-
-        val planned = plannedWatering?.takeIf { it.status in listOf("queued", "sending") }
-
-        if (activeOperation != null) {
-            WateringOperationStatus(activeOperation, activeOperationEvents, wateringStatus)
-            Spacer(modifier = Modifier.height(20.dp))
-            StopWateringButton(onStopWatering)
-        } else if (planned != null) {
-            PlannedWateringStatus(planned)
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onStopWatering,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Text("Cancel")
-            }
-        } else {
-            if (isWateringActive) {
-                ControllerWateringStatus(controllerWateringState)
-                Spacer(modifier = Modifier.height(20.dp))
-                StopWateringButton(onStopWatering)
-            } else {
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = onAmountChange,
-                    label = { Text("Water amount (g)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = { amountText.toDoubleOrNull()?.let { onStartWatering(it) } },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Start")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun PlannedWateringStatus(planned: PlannedWatering) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = MaterialTheme.shapes.small
-    ) {
-        Text(
-            text = "Planned watering: ${planned.targetG.toInt()} g",
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-    }
-}
-
-@Composable
-fun WateringOperationStatus(
-    operation: OperationResponse,
-    events: List<OperationEvent>,
-    wateringStatus: WateringStatus?
-) {
-    val showProgress = operation.status == "running"
-    val progressPercent = wateringStatus?.percentComplete?.takeIf { showProgress }
-    val progressState = wateringStatus?.state?.takeIf { showProgress }
-    val targetText = operation.targetG?.let { "${it.toInt()} g" } ?: "N/A"
-    val lastMessage = events.lastOrNull()?.message
-    val dateFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
-    val updatedAt = dateFormat.format(Date((operation.updatedAt * 1000).toLong()))
-
-    Text(
-        text = when (operation.status) {
-            "accepted" -> "Watering command accepted"
-            "running" -> "Watering in progress"
-            else -> "Watering operation"
-        },
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold
-    )
-    Spacer(modifier = Modifier.height(4.dp))
-    Text("Status: ${operation.status.uppercase()}", style = MaterialTheme.typography.bodyMedium)
-    Text("Target: $targetText", style = MaterialTheme.typography.bodyMedium)
-    Text("Updated: $updatedAt", style = MaterialTheme.typography.bodySmall)
-    if (!showProgress && operation.status == "accepted") {
-        Text("Waiting for controller result", style = MaterialTheme.typography.bodySmall)
-    }
-    progressPercent?.let {
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("Progress: ${it.toInt()}%")
-        LinearProgressIndicator(
-            progress = { it.toFloat() / 100f },
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-        )
-    }
-    progressState?.let {
-        Text("State: $it")
-    }
-    if (!lastMessage.isNullOrBlank()) {
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("Event: $lastMessage", style = MaterialTheme.typography.bodySmall)
-    }
-
-    operation.error?.let { err ->
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(err.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        if (!err.detail.isNullOrBlank() && err.detail != err.message) {
-            Text(err.detail, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-fun ControllerWateringStatus(state: String?) {
-    Text("Watering started", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    Spacer(modifier = Modifier.height(4.dp))
-    Text("State: ${state ?: "active"}", style = MaterialTheme.typography.bodyMedium)
-}
-
-@Composable
-fun WateringHistoryPage(
-    historyState: WateringHistoryUiState,
-    suppressEmptyState: Boolean = false,
-    onSuccessfulOnlyChange: (Boolean) -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                "Watering History",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = !historyState.successfulOnly,
-                    onClick = { onSuccessfulOnlyChange(false) },
-                    label = { Text("Last 10") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChip(
-                    selected = historyState.successfulOnly,
-                    onClick = { onSuccessfulOnlyChange(true) },
-                    label = { Text("Successful") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-
-            when {
-                suppressEmptyState && historyState.operations.isEmpty() -> Unit
-                historyState.isLoading && historyState.operations.isEmpty() -> {
-                    CircularProgressIndicator()
-                }
-                historyState.error != null && historyState.operations.isEmpty() -> {
-                    Text(
-                        historyState.error,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                historyState.operations.isEmpty() -> {
-                    Text("No watering history", style = MaterialTheme.typography.bodyMedium)
-                }
-                else -> {
-                    historyState.error?.let {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                    historyState.operations.forEachIndexed { index, operation ->
-                        WateringHistoryRow(operation)
-                        if (index != historyState.operations.lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun WateringHistoryRow(operation: OperationResponse) {
-    val success = operation.status == "success"
-    val statusColor = if (success) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-    val finishedAt = operation.finishedAt ?: operation.updatedAt
-    val finishedText = formatSnapshotReceivedAt(finishedAt)
-    val targetText = operation.targetG?.let { "${it.toInt()} g" } ?: "N/A"
-    val message = operation.error?.message
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                operation.device.ifBlank { "Tank" },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                operation.status.uppercase(),
-                color = statusColor,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text("Target: $targetText", style = MaterialTheme.typography.bodySmall)
-        Text("Finished: $finishedText", style = MaterialTheme.typography.bodySmall)
-        if (!message.isNullOrBlank()) {
-            Text(
-                message,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
-    }
-}
-
-@Composable
-fun StopWateringButton(onStopWatering: () -> Unit) {
-    Button(
-        onClick = onStopWatering,
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("Stop Watering")
-    }
 }

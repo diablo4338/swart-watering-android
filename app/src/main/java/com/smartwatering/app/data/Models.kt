@@ -3,20 +3,6 @@ package com.smartwatering.app.data
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
-enum class DeviceType(val apiValue: String) {
-    PLANT("plant"),
-    TANK("tank")
-}
-
-enum class OperationType(val apiValue: String) {
-    DEVICE_CONFIG("device_config"),
-    SLEEP_ENABLE("sleep_enable"),
-    SLEEP_DISABLE("sleep_disable"),
-    SLEEP_INTERVAL("sleep_interval"),
-    ZERO_CAPTURE("zero_capture"),
-    SCALE_CALIBRATION("scale_calibration")
-}
-
 @JsonClass(generateAdapter = true)
 data class AppRelease(
     @param:Json(name = "version_name") val versionName: String,
@@ -24,288 +10,113 @@ data class AppRelease(
     @param:Json(name = "download_url") val downloadUrl: String,
 )
 
-data class LoginRequest(
-    val username: String,
-    val password: String
-)
+@JsonClass(generateAdapter = true)
+data class LoginRequest(val username: String, val password: String)
 
 @JsonClass(generateAdapter = true)
-data class GoogleLoginRequest(
-    @param:Json(name = "id_token") val idToken: String
-)
+data class GoogleLoginRequest(@param:Json(name = "id_token") val idToken: String)
 
 @JsonClass(generateAdapter = true)
 data class LoginResponse(
     val token: String,
-    @param:Json(name = "expires_at") val expiresAt: Double
+    @param:Json(name = "expires_at") val expiresAt: Double,
 )
 
 @JsonClass(generateAdapter = true)
-data class LogoutResponse(
-    val status: String = "logged_out"
-)
+data class LogoutResponse(val status: String = "logged_out")
 
 @JsonClass(generateAdapter = true)
 data class Device(
+    val id: String,
     val name: String,
-    @param:Json(name = "controller_name") val controllerName: String,
-    val type: String,
-    @param:Json(name = "has_pending_operations") val hasPendingOperations: Boolean = false
+    @param:Json(name = "device_type") val type: String,
+    @param:Json(name = "card_profile") val cardProfile: String,
+    @param:Json(name = "card_href") val cardHref: String,
 )
 
 @JsonClass(generateAdapter = true)
-data class DeviceListResponse(
-    val devices: List<Device>
+data class DeviceListResponse(val devices: List<Device>)
+
+@JsonClass(generateAdapter = true)
+data class CardRefreshPolicy(
+    val mode: String,
+    @param:Json(name = "interval_ms") val intervalMs: Long? = null,
+    val href: String? = null,
+    val etag: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
-data class WaterConsumptionDay(
-    val date: String,
-    val day: Double?,
-    val night: Double?,
-    @param:Json(name = "day_below_weekly_median")
-    val dayBelowWeeklyMedian: Boolean = false,
-    @param:Json(name = "night_below_weekly_median")
-    val nightBelowWeeklyMedian: Boolean = false
+data class CardRequestBodyBinding(
+    val binding: String,
+    val property: String? = null,
+    val fields: List<String> = emptyList(),
+    val properties: Map<String, String> = emptyMap(),
+    val value: Map<String, Any?>? = null,
+    val literal: Map<String, Any?>? = null,
 )
 
 @JsonClass(generateAdapter = true)
-data class WaterConsumptionResponse(
-    val device: String,
-    val days: List<WaterConsumptionDay>
+data class CardRequest(
+    val method: String,
+    val href: String,
+    val body: CardRequestBodyBinding,
 )
 
 @JsonClass(generateAdapter = true)
-data class DetectedWatering(
-    val id: Int,
-    @param:Json(name = "occurred_at") val occurredAt: Double,
-    @param:Json(name = "weight_before_g") val weightBeforeG: Double,
-    @param:Json(name = "weight_after_g") val weightAfterG: Double,
-    @param:Json(name = "amount_g") val amountG: Double,
-    val source: String,
-    val fertilized: Boolean = false
+data class CardCommit(val mode: String, val label: String, val request: CardRequest)
+
+@JsonClass(generateAdapter = true)
+data class CardOption(val value: String, val label: String)
+
+@JsonClass(generateAdapter = true)
+data class CardControl(
+    val kind: String,
+    val id: String,
+    val label: String,
+    @param:Json(name = "control_type") val controlType: String,
+    @param:Json(name = "value_type") val valueType: String? = null,
+    val default: Any? = null,
+    val unit: String? = null,
+    val enabled: Boolean = true,
+    val style: String? = null,
+    val preset: String? = null,
+    val options: List<CardOption> = emptyList(),
+    val constraints: Map<String, Any?> = emptyMap(),
+    val request: CardRequest? = null,
+    val commit: CardCommit? = null,
+    val value: Any? = null,
 )
 
 @JsonClass(generateAdapter = true)
-data class DetectedWateringListResponse(
-    val device: String,
-    val waterings: List<DetectedWatering>,
-    @param:Json(name = "next_offset") val nextOffset: Int?
+data class CardBlockSchema(val controls: List<CardControl> = emptyList())
+
+@JsonClass(generateAdapter = true)
+data class CardBlock(
+    val id: String,
+    val kind: String,
+    val slot: String,
+    val title: String? = null,
+    val required: Boolean = false,
+    val schema: CardBlockSchema? = null,
+    val data: Map<String, Any?> = emptyMap(),
+    val refresh: CardRefreshPolicy,
 )
 
 @JsonClass(generateAdapter = true)
-data class InvalidateDetectedWateringResponse(
-    val id: Int,
-    val invalid: Boolean
+data class DeviceCard(
+    @param:Json(name = "device_id") val deviceId: String,
+    val profile: String,
+    @param:Json(name = "schema_version") val schemaVersion: Int,
+    val revision: Long,
+    val blocks: List<CardBlock>,
 )
 
 @JsonClass(generateAdapter = true)
-data class SetFertilizedRequest(val fertilized: Boolean)
-
-@JsonClass(generateAdapter = true)
-data class SetFertilizedResponse(val id: Int, val fertilized: Boolean)
-
-@JsonClass(generateAdapter = true)
-data class DeviceTypesResponse(val types: List<String>)
-
-@JsonClass(generateAdapter = true)
-data class DeviceNameAvailabilityResponse(
-    val name: String,
-    val available: Boolean,
+data class CardBlockResponse(
+    @param:Json(name = "device_id") val deviceId: String,
+    @param:Json(name = "card_revision") val cardRevision: Long,
+    val block: CardBlock,
 )
 
 @JsonClass(generateAdapter = true)
-data class WateringParameters(
-    val device: String,
-    @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
-    @param:Json(name = "dry_weight_updated_at") val dryWeightUpdatedAt: Double? = null,
-    @param:Json(name = "wet_weight_g") val wetWeightG: Int? = null,
-    @param:Json(name = "wet_weight_updated_at") val wetWeightUpdatedAt: Double? = null,
-    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Int? = null,
-    @param:Json(name = "watering_loss_threshold_updated_at") val wateringLossThresholdUpdatedAt: Double? = null,
-    @param:Json(name = "operation_id") val operationId: String? = null,
-)
-
-@JsonClass(generateAdapter = true)
-data class WateringParametersRequest(
-    @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
-    @param:Json(name = "wet_weight_g") val wetWeightG: Int? = null,
-    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Int? = null,
-)
-
-@JsonClass(generateAdapter = true)
-data class DeviceInfo(
-    val name: String?,
-    val type: String?
-)
-
-@JsonClass(generateAdapter = true)
-data class RawDeviceStatus(
-    val device: DeviceInfo?,
-    val watering: WateringInfo?,
-    val config: DeviceConfig?,
-    val weight: DeviceWeight?
-)
-
-@JsonClass(generateAdapter = true)
-data class WateringInfo(
-    val active: Boolean,
-    val state: String?,
-    @param:Json(name = "last_operation_type") val lastOperationType: String?,
-    @param:Json(name = "last_operation_status") val lastOperationStatus: String?
-)
-
-@JsonClass(generateAdapter = true)
-data class DeviceConfig(
-    @param:Json(name = "target_g") val targetG: Double?,
-    @param:Json(name = "dry_weight_g") val dryWeightG: Double?,
-    @param:Json(name = "wet_weight_g") val wetWeightG: Double? = null,
-    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Double? = null,
-    @param:Json(name = "tare_weight_g") val tareWeightG: Double?,
-    @param:Json(name = "zero_raw") val zeroRaw: Double? = null,
-    @param:Json(name = "raw_per_gram") val rawPerGram: Double? = null,
-    @param:Json(name = "sleep_disabled") val sleepDisabled: Boolean? = null,
-    @param:Json(name = "sleep_interval_min") val sleepIntervalMin: Int? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class SleepIntervalRequest(val minutes: Int)
-
-@JsonClass(generateAdapter = true)
-data class CalibrationRequest(@param:Json(name = "weight_g") val weightG: Double)
-
-@JsonClass(generateAdapter = true)
-data class DeviceConfigRequest(
-    @param:Json(name = "device_type") val deviceType: String? = null,
-    @param:Json(name = "dry_weight_g") val dryWeightG: Int? = null,
-    @param:Json(name = "tare_weight_g") val tareWeightG: Int? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class BackendNameRequest(val name: String)
-
-@JsonClass(generateAdapter = true)
-data class QueueClearResponse(val cleared: Int)
-
-@JsonClass(generateAdapter = true)
-data class DeviceWeight(
-    @param:Json(name = "gross_weight_g") val grossWeightG: Double?,
-    @param:Json(name = "useful_weight_g") val usefulWeightG: Double?,
-    @param:Json(name = "water_used_g") val waterUsedG: Double?
-)
-
-@JsonClass(generateAdapter = true)
-data class LatestStatusResponse(
-    val device: String,
-    val status: String,
-    val source: String, // live, snapshot, none
-    val available: Boolean,
-    val result: RawDeviceStatus?,
-    @param:Json(name = "result_received_at") val resultReceivedAt: Double?,
-    @param:Json(name = "operation_id") val operationId: String?,
-    @param:Json(name = "pending_operation_id") val pendingOperationId: String?,
-    @param:Json(name = "pending_operation_status") val pendingOperationStatus: String?,
-    val error: ApiError? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class DeviceHealthResponse(
-    val device: String,
-    val status: String,
-    val online: Boolean,
-)
-
-@JsonClass(generateAdapter = true)
-data class WateringStartRequest(
-    @param:Json(name = "target_g") val targetG: Double
-)
-
-@JsonClass(generateAdapter = true)
-data class OperationResponse(
-    @param:Json(name = "operation_id") val operationId: String,
-    val device: String = "",
-    val type: String = "",
-    val status: String = "",
-    @param:Json(name = "target_g") val targetG: Double? = null,
-    val minutes: Int? = null,
-    @param:Json(name = "weight_g") val weightG: Double? = null,
-    @param:Json(name = "device_type") val deviceType: String? = null,
-    @param:Json(name = "backend_name") val backendName: String? = null,
-    val name: String? = null,
-    @param:Json(name = "dry_weight_g") val dryWeightG: Double? = null,
-    @param:Json(name = "tare_weight_g") val tareWeightG: Double? = null,
-    @param:Json(name = "wet_weight_g") val wetWeightG: Double? = null,
-    @param:Json(name = "watering_loss_threshold_percent") val wateringLossThresholdPercent: Double? = null,
-    val error: OperationError? = null,
-    @param:Json(name = "created_at") val createdAt: Double = 0.0,
-    @param:Json(name = "updated_at") val updatedAt: Double = 0.0,
-    @param:Json(name = "finished_at") val finishedAt: Double? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class OperationListResponse(
-    val operations: List<OperationResponse>
-)
-
-@JsonClass(generateAdapter = true)
-data class WateringHistoryResponse(
-    val operations: List<OperationResponse>
-)
-
-@JsonClass(generateAdapter = true)
-data class OperationError(
-    val code: String,
-    val message: String,
-    val detail: String?,
-    val retryable: Boolean?
-)
-
-@JsonClass(generateAdapter = true)
-data class ApiError(
-    val code: String,
-    val message: String,
-    val retryable: Boolean?
-)
-
-@JsonClass(generateAdapter = true)
-data class WateringStatus(
-    val device: DeviceInfo?,
-    val active: Boolean,
-    val state: String?,
-    @param:Json(name = "gap_g") val gapG: Double?,
-    @param:Json(name = "percent_complete") val percentComplete: Double?,
-    @param:Json(name = "last_operation") val lastOperation: OperationInfo?,
-    val source: String,
-    val available: Boolean,
-    @param:Json(name = "result_received_at") val resultReceivedAt: Double,
-    @param:Json(name = "operation_id") val operationId: String?,
-    @param:Json(name = "pending_operation_id") val pendingOperationId: String?,
-    @param:Json(name = "pending_operation_status") val pendingOperationStatus: String?,
-    @param:Json(name = "planned_watering") val plannedWatering: PlannedWatering? = null,
-    val result: RawDeviceStatus? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class PlannedWatering(
-    @param:Json(name = "operation_id") val operationId: String = "",
-    @param:Json(name = "target_g") val targetG: Double,
-    val status: String
-)
-
-@JsonClass(generateAdapter = true)
-data class OperationInfo(
-    val type: String?,
-    val status: String?
-)
-
-@JsonClass(generateAdapter = true)
-data class OperationEventsResponse(
-    @param:Json(name = "operation_id") val operationId: String = "",
-    val events: List<OperationEvent>
-)
-
-@JsonClass(generateAdapter = true)
-data class OperationEvent(
-    val status: String,
-    val message: String
-)
+data class CardActionResponse(val accepted: Boolean, val card: DeviceCard)

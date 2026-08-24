@@ -27,8 +27,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 import com.smartwatering.app.ui.DevicesScreen
-import com.smartwatering.app.ui.DeviceControlScreen
-import com.smartwatering.app.ui.DetectedWateringHistoryScreen
 import com.smartwatering.app.ui.LoginScreen
 import com.smartwatering.app.ui.MainViewModel
 import com.smartwatering.app.ui.Screen
@@ -94,15 +92,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 showBackendUnavailable = showBackendUnavailable,
                             )
-                            is Screen.DeviceControl -> DeviceControlScreen(
-                                viewModel,
-                                (currentScreen as Screen.DeviceControl).device
-                            )
-                            is Screen.DetectedWateringHistory ->
-                                DetectedWateringHistoryScreen(
-                                    viewModel,
-                                    (currentScreen as Screen.DetectedWateringHistory).device
-                                )
                         }
                     }
                 }

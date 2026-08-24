@@ -1,17 +1,10 @@
 # Smart Watering Android App
 
-The app uses the authenticated public `/api/v2` API. It supports device and
-watering status, watering history, and a device-control screen for:
-
-- configuration (`name`, API-provided device type, dry weight, and tare);
-- sleep mode and sleep interval;
-- scale zero and calibration;
-- viewing and clearing queued commands.
-
-The device-type selector is populated from `GET /api/v2/device-types`.
-Device-control screens refresh every three seconds. Current controller values
-remain in the inputs while queued values are shown separately until their
-operations are applied.
+The app uses `/api/v3/auth/...` and the authenticated server-driven
+`/api/v3/devices/...` card API. It has no operation-oriented or device-control
+endpoint knowledge: layouts, values, actions, queue entries, and refresh policies
+come from backend card blocks. The only v2 request retained in the app is
+`GET /api/v2/app/latest`; its returned URL downloads the compatible APK.
 
 ## API Environment Per Build Type
 

@@ -12,7 +12,7 @@ class IdempotencyInterceptor : Interceptor {
         val request = chain.request()
         if (
             request.method !in IDEMPOTENT_HTTP_METHODS ||
-            !request.url.encodedPath.startsWith("/api/v2/devices/") ||
+            !request.url.encodedPath.startsWith("/api/v3/devices/") ||
             request.header(IDEMPOTENCY_HEADER) != null
         ) {
             return chain.proceed(request)
