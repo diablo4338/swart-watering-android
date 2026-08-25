@@ -16,6 +16,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -46,7 +49,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
+
+private const val DEFAULT_BLOCK_POLL_INTERVAL_MS = 5000L
 
 @Composable
 fun LoginScreen(viewModel: MainViewModel) {
@@ -131,6 +138,22 @@ fun DevicesScreen(viewModel: MainViewModel, showBackendUnavailable: Boolean = fa
                     }
                 },
                 actions = {
+                    val refreshActionId = selected?.let { "$it:refresh_status" }
+                    val refreshAvailable = selected?.let { deviceId ->
+                        cards[deviceId]?.card?.blocks
+                            ?.firstOrNull { it.kind == "device_overview" }
+                            ?.actions?.any { it.id == "refresh_status" && it.enabled }
+                    } == true
+                    IconButton(
+                        onClick = viewModel::refreshActiveDeviceStatus,
+                        enabled = refreshAvailable && refreshActionId !in pendingActions,
+                    ) {
+                        if (refreshActionId in pendingActions) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh device status")
+                        }
+                    }
                     VersionInfoButton(viewModel)
                     IconButton(onClick = viewModel::logout) {
                         Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout")
@@ -191,7 +214,7 @@ private fun DeviceCardPage(
     loadingBlocks: Set<String>,
     onRefresh: () -> Unit,
     onOpenBlock: (String?) -> Unit,
-    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+    onAction: CardActionHandler,
 ) {
     Card(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -259,7 +282,7 @@ private fun CardBlockRenderer(
     deviceId: String,
     block: CardBlock,
     pendingActions: Set<String>,
-    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+    onAction: CardActionHandler,
 ) {
     when (block.kind) {
         "device_overview" -> {
@@ -285,7 +308,7 @@ private fun OperationQueueBlock(
     deviceId: String,
     block: CardBlock,
     pendingActions: Set<String>,
-    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+    onAction: CardActionHandler,
 ) {
     val items = block.data["items"].asList()
     BlockSurface(block.title) {
@@ -316,7 +339,7 @@ private fun OperationQueueBlock(
                     operation["actions"].asList().firstOrNull()?.asControl()?.let { action ->
                         val actionKey = "$deviceId:${block.id}:${operation["id"].asText()}:${action.id}"
                         TextButton(
-                            onClick = { action.request?.let { onAction(actionKey, it, emptyMap(), null) } },
+                            onClick = { action.request?.let { onAction(actionKey, it, emptyMap(), null, null) } },
                             enabled = action.enabled && actionKey !in pendingActions,
                             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         ) {
@@ -333,6 +356,7 @@ private fun OperationQueueBlock(
 @Composable
 private fun OverviewHeader(block: CardBlock) {
     val status = block.data["status"].asMap()
+    val workflow = block.data["workflow"].asMap()
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val severity = status["severity"].asText()
@@ -346,6 +370,9 @@ private fun OverviewHeader(block: CardBlock) {
         }
         Text(block.data["title"].asText(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(block.data["subtitle"].asText(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (workflow["code"].asText() != "idle") {
+            Text(workflow["label"].asText(), color = MaterialTheme.colorScheme.tertiary)
+        }
     }
 }
 
@@ -378,26 +405,75 @@ private fun OverviewValue(block: CardBlock) {
 private fun OverviewStatistics(block: CardBlock) {
     val statistics = block.data["statistics"].asList()
     if (statistics.isEmpty()) return
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            statistics.forEach { statistic ->
-                if (statistic.asMap()["kind"].asText() == "water_consumption") {
-                    WaterConsumption(statistic.asMap()["days"].asList())
-                }
-            }
+    statistics.forEach { statistic ->
+        if (statistic.asMap()["kind"].asText() == "water_consumption") {
+            WaterConsumption(statistic.asMap()["days"].asList())
         }
     }
 }
 
 @Composable
 private fun WaterConsumption(days: List<Any?>) {
-    Text("Water consumption", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    days.forEach { raw ->
-        val day = raw.asMap()
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(day["date"].asText())
-            Text("Day ${day["day"].asNumber()?.let(::formatNumber) ?: "—"} g · Night ${day["night"].asNumber()?.let(::formatNumber) ?: "—"} g")
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        days.forEach { raw ->
+            val values = raw.asMap()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                WaterConsumptionValue(
+                    value = values["day"].asNumber(),
+                    belowMedian = values["day_below_weekly_median"] as? Boolean ?: false,
+                    normalColor = Color(0xFF4CAF50),
+                    modifier = Modifier.weight(1f),
+                )
+                WaterConsumptionValue(
+                    value = values["night"].asNumber(),
+                    belowMedian = values["night_below_weekly_median"] as? Boolean ?: false,
+                    normalColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun WaterConsumptionValue(
+    value: Double?,
+    belowMedian: Boolean,
+    normalColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.height(44.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = if (value != null && value < 0) {
+                Icons.Default.KeyboardArrowDown
+            } else {
+                Icons.Default.KeyboardArrowUp
+            },
+            contentDescription = null,
+            modifier = Modifier.size(26.dp),
+            tint = if (belowMedian) MaterialTheme.colorScheme.error else normalColor,
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = value?.let { "${formatNumber(kotlin.math.abs(it))} g" } ?: "—",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = if (value == null) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
     }
 }
 
@@ -406,7 +482,7 @@ private fun DynamicFormBlock(
     deviceId: String,
     block: CardBlock,
     pendingActions: Set<String>,
-    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+    onAction: CardActionHandler,
 ) {
     val controls = block.schema?.controls.orEmpty()
     val serverValues = block.data["values"].asMap()
@@ -431,7 +507,7 @@ private fun DynamicFormBlock(
                     onCommit = { request ->
                         val value = parseValue(drafts[control.id], control.valueType)
                         dirty[control.id] = false
-                        onAction(actionKey, request, parsedValues(drafts, controls), value)
+                        onAction(actionKey, request, parsedValues(drafts, controls), value, null)
                     },
                 )
                 "action" -> ActionControl(
@@ -440,10 +516,16 @@ private fun DynamicFormBlock(
                     )),
                     currentValue = serverValues[control.id] ?: control.value,
                     pending = actionKey in pendingActions,
-                    onInvoke = { value -> control.request?.let {
+                    lockDurationMs = (block.refresh.intervalMs ?: DEFAULT_BLOCK_POLL_INTERVAL_MS)
+                        .coerceIn(2000L, 300000L),
+                    onInvoke = { value, onComplete -> control.request?.let {
                         it.body.fields.forEach { field -> dirty[field] = false }
-                        onAction(actionKey, it, parsedValues(drafts, controls), value)
-                    } },
+                        onAction(
+                            actionKey, it, parsedValues(drafts, controls), value, onComplete
+                        )
+                    } ?: onComplete?.invoke(
+                        ActionSubmissionResult(false, "Action request is missing")
+                    ) },
                 )
             }
         }
@@ -499,24 +581,87 @@ private fun ActionControl(
     control: CardControl,
     currentValue: Any?,
     pending: Boolean,
-    onInvoke: (Any?) -> Unit,
+    lockDurationMs: Long = DEFAULT_BLOCK_POLL_INTERVAL_MS,
+    onInvoke: (Any?, ((ActionSubmissionResult) -> Unit)?) -> Unit,
 ) {
     val enabled = control.enabled && !pending
     when (control.controlType) {
-        "action_toggle.v1" -> Row(
+        "action_toggle.v1" -> GuardedActionToggle(
+            control = control,
+            serverValue = currentValue as? Boolean ?: false,
+            pending = pending,
+            lockDurationMs = lockDurationMs,
+            onInvoke = onInvoke,
+        )
+        "hold_action.v1" -> HoldActionButton(control.label, control.preset, enabled) { onInvoke(null, null) }
+        "button.v1" -> Button(
+            onClick = { onInvoke(null, null) }, enabled = enabled, modifier = Modifier.fillMaxWidth(),
+            colors = if (control.style == "danger") ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors(),
+        ) { if (pending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(control.label) }
+        else -> Text("Unsupported control: ${control.controlType}", color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun GuardedActionToggle(
+    control: CardControl,
+    serverValue: Boolean,
+    pending: Boolean,
+    lockDurationMs: Long,
+    onInvoke: (Any?, ((ActionSubmissionResult) -> Unit)?) -> Unit,
+) {
+    var displayedValue by remember(control.id) { mutableStateOf(serverValue) }
+    var rollbackValue by remember(control.id) { mutableStateOf(serverValue) }
+    var locked by remember(control.id) { mutableStateOf(false) }
+    var timerElapsed by remember(control.id) { mutableStateOf(false) }
+    var submissionResult by remember(control.id) { mutableStateOf<ActionSubmissionResult?>(null) }
+    var localError by remember(control.id) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Polling may replace the whole block, but it must not overwrite an in-flight toggle.
+    LaunchedEffect(serverValue) {
+        if (!locked) displayedValue = serverValue
+    }
+    LaunchedEffect(submissionResult) {
+        val result = submissionResult ?: return@LaunchedEffect
+        if (locked && !result.successful) {
+            displayedValue = rollbackValue
+            localError = result.error ?: "Action failed"
+        }
+    }
+    LaunchedEffect(timerElapsed, submissionResult) {
+        if (!locked || !timerElapsed || submissionResult == null) return@LaunchedEffect
+        locked = false
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(control.label)
-            Switch(checked = currentValue as? Boolean ?: false, onCheckedChange = onInvoke, enabled = enabled)
+            Switch(
+                checked = displayedValue,
+                onCheckedChange = { nextValue ->
+                    rollbackValue = displayedValue
+                    displayedValue = nextValue
+                    locked = true
+                    timerElapsed = false
+                    submissionResult = null
+                    localError = null
+                    scope.launch {
+                        delay(lockDurationMs.milliseconds)
+                        timerElapsed = true
+                    }
+                    onInvoke(nextValue) { result -> submissionResult = result }
+                },
+                enabled = control.enabled && !pending && !locked,
+            )
         }
-        "hold_action.v1" -> HoldActionButton(control.label, control.preset, enabled) { onInvoke(null) }
-        "button.v1" -> Button(
-            onClick = { onInvoke(null) }, enabled = enabled, modifier = Modifier.fillMaxWidth(),
-            colors = if (control.style == "danger") ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors(),
-        ) { if (pending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(control.label) }
-        else -> Text("Unsupported control: ${control.controlType}", color = MaterialTheme.colorScheme.error)
+        localError?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 
@@ -567,7 +712,7 @@ private fun ProgressBlock(
     deviceId: String,
     block: CardBlock,
     pendingActions: Set<String>,
-    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+    onAction: CardActionHandler,
 ) {
     BlockSurface(block.title) {
         Text(block.data["label"].asText(), fontWeight = FontWeight.Bold)
@@ -575,8 +720,11 @@ private fun ProgressBlock(
         LinearProgressIndicator(Modifier.fillMaxWidth())
         block.schema?.controls.orEmpty().forEach { control ->
             val key = "$deviceId:${block.id}:${control.id}"
-            ActionControl(control, control.value, key in pendingActions) { value ->
-                control.request?.let { onAction(key, it, emptyMap(), value) }
+            ActionControl(control, control.value, key in pendingActions) { value, onComplete ->
+                control.request?.let { onAction(key, it, emptyMap(), value, onComplete) }
+                    ?: onComplete?.invoke(
+                        ActionSubmissionResult(false, "Action request is missing")
+                    )
             }
         }
     }
@@ -587,7 +735,7 @@ private fun HistoryBlock(
     deviceId: String,
     block: CardBlock,
     pendingActions: Set<String>,
-    onAction: (String, CardRequest, Map<String, Any?>, Any?) -> Unit,
+    onAction: CardActionHandler,
 ) {
     val items = block.data["items"].asList()
     BlockSurface(block.title) {
@@ -602,8 +750,12 @@ private fun HistoryBlock(
                     item["actions"].asList().forEach { actionRaw ->
                         val action = actionRaw.asControl() ?: return@forEach
                         val key = "$deviceId:${block.id}:${item["id"].asText()}:${action.id}"
-                        ActionControl(action, action.value, key in pendingActions) { value ->
-                            action.request?.let { onAction(key, it, emptyMap(), value) }
+                        ActionControl(action, action.value, key in pendingActions) { value, onComplete ->
+                            action.request?.let {
+                                onAction(key, it, emptyMap(), value, onComplete)
+                            } ?: onComplete?.invoke(
+                                ActionSubmissionResult(false, "Action request is missing")
+                            )
                         }
                     }
                 }

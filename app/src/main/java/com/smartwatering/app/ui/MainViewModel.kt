@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import retrofit2.HttpException
-import kotlin.math.max
 import kotlin.time.Duration.Companion.milliseconds
 
 data class CardUiState(
@@ -30,6 +29,19 @@ data class CardUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
 )
+
+data class ActionSubmissionResult(
+    val successful: Boolean,
+    val error: String? = null,
+)
+
+typealias CardActionHandler = (
+    String,
+    CardRequest,
+    Map<String, Any?>,
+    Any?,
+    ((ActionSubmissionResult) -> Unit)?,
+) -> Unit
 
 sealed class Screen {
     object Login : Screen()
@@ -78,6 +90,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var deviceListRefreshJob: Job? = null
     private val blockRefreshJobs = mutableMapOf<String, Job>()
+    private val blockRevisions = mutableMapOf<String, Long>()
     private val loadedOnceBlocks = mutableSetOf<String>()
     private var activeDeviceId: String? = null
     private var openBlockId: String? = null
@@ -136,6 +149,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshCard(device: Device) = loadCard(device, force = true)
 
+    fun refreshActiveDeviceStatus() {
+        val deviceId = activeDeviceId ?: return
+        val action = _cards.value[deviceId]?.card?.blocks
+            ?.firstOrNull { it.kind == "device_overview" }
+            ?.actions?.firstOrNull { it.id == "refresh_status" && it.enabled }
+            ?: return
+        val request = action.request ?: return
+        performAction("$deviceId:${action.id}", request)
+    }
+
     fun setOpenBlock(deviceId: String, blockId: String?) {
         if (deviceId != activeDeviceId) return
         openBlockId = blockId
@@ -192,14 +215,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         request: CardRequest,
         values: Map<String, Any?> = emptyMap(),
         controlValue: Any? = null,
+        onComplete: ((ActionSubmissionResult) -> Unit)? = null,
     ) {
-        if (actionId in _pendingActions.value) return
+        if (actionId in _pendingActions.value) {
+            onComplete?.invoke(ActionSubmissionResult(false, "Action is already in progress"))
+            return
+        }
         viewModelScope.launch {
             _pendingActions.update { it + actionId }
             try {
                 val response = Repository.api.performCardAction(
                     request.href, bindBody(request, values, controlValue)
                 )
+                if (!response.accepted) {
+                    val message = "Action was not accepted"
+                    _error.value = message
+                    onComplete?.invoke(ActionSubmissionResult(false, message))
+                    return@launch
+                }
                 val previousDeviceId = activeDeviceId
                 val newDeviceId = response.card.deviceId
                 if (previousDeviceId != null && previousDeviceId != newDeviceId) {
@@ -211,9 +244,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     refreshDevicesOnce()
                 } else putCard(newDeviceId, response.card)
                 if (activeDeviceId == newDeviceId) scheduleBlockRefreshes(response.card)
+                onComplete?.invoke(ActionSubmissionResult(true))
             } catch (error: Exception) {
+                val message = readableError(error)
                 if (error is HttpException && error.code() == 401) clearActiveSession()
-                else _error.value = readableError(error)
+                else _error.value = message
+                onComplete?.invoke(ActionSubmissionResult(false, message))
             } finally {
                 _pendingActions.update { it - actionId }
             }
@@ -273,12 +309,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun replaceBlock(response: CardBlockResponse) {
+        val revisionKey = "${response.deviceId}:${response.block.id}"
+        val currentRevision = blockRevisions[revisionKey]
+        if (currentRevision != null && response.blockRevision < currentRevision) return
+        blockRevisions[revisionKey] = response.blockRevision
         _cards.update { states ->
             val state = states[response.deviceId] ?: return@update states
             val current = state.card ?: return@update states
             states + (response.deviceId to state.copy(
                 card = current.copy(
-                    revision = max(current.revision, response.cardRevision),
                     blocks = current.blocks.map {
                         if (it.id == response.block.id) response.block else it
                     },
@@ -289,6 +328,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun putCard(previousId: String, card: DeviceCard) {
+        blockRevisions.keys.removeAll { key ->
+            key.startsWith("$previousId:") || key.startsWith("${card.deviceId}:")
+        }
         _cards.update { states ->
             val next = if (previousId == card.deviceId) states else states - previousId
             next + (card.deviceId to CardUiState(card = card))
@@ -415,6 +457,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _currentScreen.value = Screen.Login
         _devices.value = emptyList()
         _cards.value = emptyMap()
+        blockRevisions.clear()
         _selectedDeviceName.value = null
         activeDeviceId = null
         deviceListRefreshJob?.cancel()

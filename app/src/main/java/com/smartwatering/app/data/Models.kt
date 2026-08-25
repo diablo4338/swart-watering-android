@@ -99,6 +99,7 @@ data class CardBlock(
     val required: Boolean = false,
     val schema: CardBlockSchema? = null,
     val data: Map<String, Any?> = emptyMap(),
+    val actions: List<CardControl> = emptyList(),
     val refresh: CardRefreshPolicy,
 )
 
@@ -107,14 +108,13 @@ data class DeviceCard(
     @param:Json(name = "device_id") val deviceId: String,
     val profile: String,
     @param:Json(name = "schema_version") val schemaVersion: Int,
-    val revision: Long,
     val blocks: List<CardBlock>,
 )
 
 @JsonClass(generateAdapter = true)
 data class CardBlockResponse(
     @param:Json(name = "device_id") val deviceId: String,
-    @param:Json(name = "card_revision") val cardRevision: Long,
+    @param:Json(name = "block_revision") val blockRevision: Long,
     val block: CardBlock,
 )
 
