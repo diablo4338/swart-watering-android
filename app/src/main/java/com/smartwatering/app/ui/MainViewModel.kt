@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.smartwatering.app.data.*
+import com.squareup.moshi.JsonDataException
 import java.io.IOException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -53,8 +54,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val TAG = "SmartWateringVM"
         const val LOGIN_TIMEOUT_MS = 15000L
         const val DEVICES_TIMEOUT_MS = 15000L
-        const val DEVICE_LIST_POLL_INTERVAL_MS = 30000L
+        const val DEVICE_LIST_POLL_INTERVAL_MS = 5000L
         const val BACKEND_RECOVERY_POLL_INTERVAL_MS = 15000L
+        const val ERROR_VISIBILITY_MS = 2000L
         const val AUTH_TOKEN_PRIMARY = "auth_token_primary"
         const val AUTH_EXPIRES_AT_PRIMARY = "auth_expires_at_primary"
         const val AUTH_TOKEN_FALLBACK = "auth_token_fallback"
@@ -66,8 +68,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentScreen: StateFlow<Screen> = _currentScreen
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices
-    private val _selectedDeviceName = MutableStateFlow<String?>(null)
-    val selectedDeviceName: StateFlow<String?> = _selectedDeviceName
+    private val _selectedDeviceId = MutableStateFlow<String?>(null)
+    val selectedDeviceId: StateFlow<String?> = _selectedDeviceId
     private val _cards = MutableStateFlow<Map<String, CardUiState>>(emptyMap())
     val cards: StateFlow<Map<String, CardUiState>> = _cards
     private val _pendingActions = MutableStateFlow<Set<String>>(emptySet())
@@ -89,6 +91,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val backendAvailability: StateFlow<BackendAvailability> = Repository.backendAvailability
 
     private var deviceListRefreshJob: Job? = null
+    private var errorDismissJob: Job? = null
+    private val cardErrorDismissJobs = mutableMapOf<String, Job>()
     private val blockRefreshJobs = mutableMapOf<String, Job>()
     private val blockRevisions = mutableMapOf<String, Long>()
     private val loadedOnceBlocks = mutableSetOf<String>()
@@ -119,9 +123,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _currentScreen.value = Screen.Devices
                 fetchDevices()
             } catch (error: Exception) {
-                _error.value = if (error is HttpException && error.code() == 401) {
+                showTransientError(if (error is HttpException && error.code() == 401) {
                     "Invalid credentials"
                 } else "Login failed: ${readableError(error)}"
+                )
             } finally {
                 _isLoading.value = false
             }
@@ -136,27 +141,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun showLoginError(message: String) { _error.value = message }
+    fun showLoginError(message: String) { showTransientError(message) }
 
     fun setActiveDevice(device: Device?) {
         if (device?.id == activeDeviceId) return
         activeDeviceId = device?.id
         openBlockId = null
-        _selectedDeviceName.value = device?.id
+        _selectedDeviceId.value = device?.id
         cancelBlockRefreshes()
         if (device != null) loadCard(device, force = _cards.value[device.id]?.card == null)
     }
 
     fun refreshCard(device: Device) = loadCard(device, force = true)
 
-    fun refreshActiveDeviceStatus() {
+    fun refreshActiveCard() {
         val deviceId = activeDeviceId ?: return
         val action = _cards.value[deviceId]?.card?.blocks
             ?.firstOrNull { it.kind == "device_overview" }
-            ?.actions?.firstOrNull { it.id == "refresh_status" && it.enabled }
+            ?.actions?.firstOrNull { it.id == "refresh_card" && it.enabled }
             ?: return
-        val request = action.request ?: return
-        performAction("$deviceId:${action.id}", request)
+        action.request?.let { performAction("$deviceId:${action.id}", it) }
     }
 
     fun setOpenBlock(deviceId: String, blockId: String?) {
@@ -218,7 +222,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onComplete: ((ActionSubmissionResult) -> Unit)? = null,
     ) {
         if (actionId in _pendingActions.value) {
-            onComplete?.invoke(ActionSubmissionResult(false, "Action is already in progress"))
+            onComplete?.invoke(ActionSubmissionResult(false))
             return
         }
         viewModelScope.launch {
@@ -228,9 +232,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     request.href, bindBody(request, values, controlValue)
                 )
                 if (!response.accepted) {
-                    val message = "Action was not accepted"
-                    _error.value = message
-                    onComplete?.invoke(ActionSubmissionResult(false, message))
+                    onComplete?.invoke(ActionSubmissionResult(false))
                     return@launch
                 }
                 val previousDeviceId = activeDeviceId
@@ -240,16 +242,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         (it - previousDeviceId) + (newDeviceId to CardUiState(response.card))
                     }
                     activeDeviceId = newDeviceId
-                    _selectedDeviceName.value = newDeviceId
+                    _selectedDeviceId.value = newDeviceId
                     refreshDevicesOnce()
                 } else putCard(newDeviceId, response.card)
                 if (activeDeviceId == newDeviceId) scheduleBlockRefreshes(response.card)
                 onComplete?.invoke(ActionSubmissionResult(true))
             } catch (error: Exception) {
-                val message = readableError(error)
                 if (error is HttpException && error.code() == 401) clearActiveSession()
-                else _error.value = message
-                onComplete?.invoke(ActionSubmissionResult(false, message))
+                val protocolMessage = protocolError(error)
+                if (protocolMessage != null) showTransientError(protocolMessage)
+                else Log.d(TAG, "Action failed: $actionId", error)
+                onComplete?.invoke(ActionSubmissionResult(false, protocolMessage))
             } finally {
                 _pendingActions.update { it - actionId }
             }
@@ -355,11 +358,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val incoming = withTimeout(DEVICES_TIMEOUT_MS.milliseconds) {
             Repository.api.getDevices().devices
         }
-        val oldOrder = _devices.value.map { it.id }
+        val previousDevices = _devices.value
+        val oldOrder = previousDevices.map { it.id }
         _devices.value = incoming.sortedBy {
-            oldOrder.indexOf(it.id).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE
+            oldOrder.indexOf(it.id).takeIf { index -> index >= 0 }
+                ?: Int.MAX_VALUE
         }
-        if (activeDeviceId == null) _devices.value.firstOrNull()?.let(::setActiveDevice)
+        val currentId = activeDeviceId
+        if (currentId == null) {
+            _devices.value.firstOrNull()?.let(::setActiveDevice)
+        } else if (_devices.value.none { it.id == currentId }) {
+            _devices.value.firstOrNull()?.let(::setActiveDevice)
+        }
     }
 
     private fun startDeviceListAutoRefresh() {
@@ -387,7 +397,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isAppReleaseLoading.value = true
             _appReleaseError.value = null
             try { _latestAppRelease.value = Repository.api.getLatestAppRelease() }
-            catch (error: Exception) { _appReleaseError.value = readableError(error) }
+            catch (error: Exception) {
+                _appReleaseError.value = protocolError(error)
+                Log.d(TAG, "App release refresh failed", error)
+            }
             finally { _isAppReleaseLoading.value = false }
         }
     }
@@ -458,7 +471,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _devices.value = emptyList()
         _cards.value = emptyMap()
         blockRevisions.clear()
-        _selectedDeviceName.value = null
+        _selectedDeviceId.value = null
         activeDeviceId = null
         deviceListRefreshJob?.cancel()
         deviceListRefreshJob = null
@@ -470,19 +483,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             clearActiveSession()
             return
         }
-        val message = readableError(error)
-        if (deviceId == null) _error.value = message
-        else _cards.update { states ->
-            val state = states[deviceId] ?: CardUiState()
-            states + (deviceId to state.copy(error = message, isLoading = false))
+        val protocolMessage = protocolError(error)
+        if (protocolMessage == null) {
+            Log.d(TAG, "Request failed", error)
+        } else if (deviceId == null) {
+            showTransientError(protocolMessage)
+        } else {
+            showTransientCardError(deviceId, protocolMessage)
         }
     }
 
     private fun readableError(error: Exception): String = when (error) {
         is TimeoutCancellationException -> "Request timed out"
-        is HttpException -> "HTTP ${error.code()} ${error.response()?.errorBody()?.string().orEmpty()}".trim()
+        is HttpException -> Repository.parseApiError(
+            error.response()?.errorBody()?.string()
+        )?.title ?: "Request failed (HTTP ${error.code()})"
         is IOException -> "Backend is unavailable"
         else -> error.message ?: error::class.java.simpleName
+    }
+
+    private fun protocolError(error: Exception): String? = when (error) {
+        is JsonDataException -> "Client and backend protocols are incompatible"
+        is IllegalStateException -> error.message
+            ?.takeIf { it.startsWith("Unsupported request binding:") }
+            ?.let { "Client and backend protocols are incompatible: $it" }
+        else -> null
+    }
+
+    private fun showTransientError(message: String) {
+        _error.value = message
+        errorDismissJob?.cancel()
+        errorDismissJob = viewModelScope.launch {
+            delay(ERROR_VISIBILITY_MS.milliseconds)
+            if (_error.value == message) _error.value = null
+        }
+    }
+
+    private fun showTransientCardError(deviceId: String, message: String) {
+        _cards.update { states ->
+            val state = states[deviceId] ?: CardUiState()
+            states + (deviceId to state.copy(error = message, isLoading = false))
+        }
+        cardErrorDismissJobs.remove(deviceId)?.cancel()
+        cardErrorDismissJobs[deviceId] = viewModelScope.launch {
+            delay(ERROR_VISIBILITY_MS.milliseconds)
+            _cards.update { states ->
+                val state = states[deviceId] ?: return@update states
+                if (state.error == message) states + (deviceId to state.copy(error = null))
+                else states
+            }
+            cardErrorDismissJobs.remove(deviceId)
+        }
     }
 
     private fun createSecurePrefs(context: Context): SharedPreferences {

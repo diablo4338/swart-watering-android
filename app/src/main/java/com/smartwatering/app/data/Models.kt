@@ -26,6 +26,17 @@ data class LoginResponse(
 data class LogoutResponse(val status: String = "logged_out")
 
 @JsonClass(generateAdapter = true)
+data class ApiErrorDetail(
+    val code: String,
+    val title: String,
+    val detail: String? = null,
+    val retryable: Boolean = false,
+)
+
+@JsonClass(generateAdapter = true)
+data class ApiErrorResponse(val error: ApiErrorDetail)
+
+@JsonClass(generateAdapter = true)
 data class Device(
     val id: String,
     val name: String,

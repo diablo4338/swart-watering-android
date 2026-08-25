@@ -42,6 +42,10 @@ object Repository {
         .add(KotlinJsonAdapterFactory())
         .build()
 
+    fun parseApiError(body: String?): ApiErrorDetail? = body
+        ?.takeIf { it.isNotBlank() }
+        ?.let { runCatching { moshi.adapter(ApiErrorResponse::class.java).fromJson(it)?.error }.getOrNull() }
+
     private val authInterceptor = Interceptor { chain ->
         val originalRequest = chain.request()
         val token = if (fallbackBaseUrl?.toHttpUrl()?.let { originalRequest.url.sameServer(it) } == true) {

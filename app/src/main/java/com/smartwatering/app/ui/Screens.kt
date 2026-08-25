@@ -27,6 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -121,7 +124,7 @@ private suspend fun requestGoogleIdToken(context: Context): String {
 @Composable
 fun DevicesScreen(viewModel: MainViewModel, showBackendUnavailable: Boolean = false) {
     val devices by viewModel.devices.collectAsState()
-    val selected by viewModel.selectedDeviceName.collectAsState()
+    val selected by viewModel.selectedDeviceId.collectAsState()
     val cards by viewModel.cards.collectAsState()
     val pendingActions by viewModel.pendingActions.collectAsState()
     val loadingBlocks by viewModel.loadingBlocks.collectAsState()
@@ -138,20 +141,20 @@ fun DevicesScreen(viewModel: MainViewModel, showBackendUnavailable: Boolean = fa
                     }
                 },
                 actions = {
-                    val refreshActionId = selected?.let { "$it:refresh_status" }
+                    val refreshActionId = selected?.let { "$it:refresh_card" }
                     val refreshAvailable = selected?.let { deviceId ->
                         cards[deviceId]?.card?.blocks
                             ?.firstOrNull { it.kind == "device_overview" }
-                            ?.actions?.any { it.id == "refresh_status" && it.enabled }
+                            ?.actions?.any { it.id == "refresh_card" && it.enabled }
                     } == true
                     IconButton(
-                        onClick = viewModel::refreshActiveDeviceStatus,
+                        onClick = viewModel::refreshActiveCard,
                         enabled = refreshAvailable && refreshActionId !in pendingActions,
                     ) {
                         if (refreshActionId in pendingActions) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh device status")
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh card")
                         }
                     }
                     VersionInfoButton(viewModel)
@@ -201,8 +204,17 @@ fun DevicesScreen(viewModel: MainViewModel, showBackendUnavailable: Boolean = fa
 
 @Composable
 private fun ErrorBanner(message: String) {
-    Surface(color = MaterialTheme.colorScheme.errorContainer) {
-        Text(message, Modifier.fillMaxWidth().padding(8.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(message) { focusRequester.requestFocus() }
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.focusRequester(focusRequester).focusable(),
+    ) {
+        Text(
+            message,
+            Modifier.fillMaxWidth().padding(8.dp),
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
     }
 }
 
@@ -626,7 +638,7 @@ private fun GuardedActionToggle(
         val result = submissionResult ?: return@LaunchedEffect
         if (locked && !result.successful) {
             displayedValue = rollbackValue
-            localError = result.error ?: "Action failed"
+            localError = result.error
         }
     }
     LaunchedEffect(timerElapsed, submissionResult) {
