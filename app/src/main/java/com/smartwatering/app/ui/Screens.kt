@@ -394,16 +394,28 @@ private fun OverviewValue(block: CardBlock) {
     val statusCode = block.data["status"].asMap()["code"].asText()
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
         val value = primary["value"].asNumber()
-        Text(
-            value?.let { "${formatNumber(it)} ${primary["unit"].asText()}" } ?: "—",
-            fontSize = 64.sp,
-            fontWeight = FontWeight.Black,
-            color = when (primary["tone"].asText()) {
+        val daysToZero = primary["days_to_zero"].asNumber()?.toInt()
+        val valueColor = when (primary["tone"].asText()) {
                 "good" -> Color(0xFF2E7D32)
                 "danger" -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.primary
-            },
-        )
+            }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                value?.let { "${formatNumber(it)} ${primary["unit"].asText()}" } ?: "—",
+                fontSize = 64.sp,
+                fontWeight = FontWeight.Black,
+                color = valueColor,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                daysToZero?.let { days -> "($days days)" } ?: "(—)",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = valueColor,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
+        }
         if (statusCode == "offline") {
             block.data["snapshot_at"].asNumber()?.let {
                 Spacer(Modifier.height(10.dp))
