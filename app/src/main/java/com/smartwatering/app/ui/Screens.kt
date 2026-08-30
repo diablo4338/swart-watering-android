@@ -57,6 +57,7 @@ import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val DEFAULT_BLOCK_POLL_INTERVAL_MS = 5000L
+private const val STALE_SNAPSHOT_AGE_SECONDS = 24 * 60 * 60L
 
 @Composable
 fun LoginScreen(viewModel: MainViewModel) {
@@ -420,6 +421,13 @@ private fun OverviewValue(block: CardBlock) {
             block.data["snapshot_at"].asNumber()?.let {
                 Spacer(Modifier.height(10.dp))
                 Text("Snapshot: ${formatTimestamp(it)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (isSnapshotStale(it)) {
+                    Text(
+                        "Error: device snapshot is more than 24 hours old",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }
@@ -849,6 +857,8 @@ private fun Any?.editableText(): String = when (this) {
 }
 private fun formatNumber(value: Double): String = if (value % 1.0 == 0.0) value.toLong().toString() else String.format(Locale.US, "%.2f", value)
 private fun formatTimestamp(epochSeconds: Double): String = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date((epochSeconds * 1000).toLong()))
+private fun isSnapshotStale(epochSeconds: Double, nowEpochSeconds: Long = System.currentTimeMillis() / 1000): Boolean =
+    nowEpochSeconds - epochSeconds > STALE_SNAPSHOT_AGE_SECONDS
 
 private fun Any?.asControl(): CardControl? {
     val map = asMap()
