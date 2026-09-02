@@ -3,8 +3,8 @@
 The app uses `/api/v3/auth/...` and the authenticated server-driven
 `/api/v3/devices/...` card API. It has no operation-oriented or device-control
 endpoint knowledge: layouts, values, actions, queue entries, and refresh policies
-come from backend card blocks. The only v2 request retained in the app is
-`GET /api/v2/app/latest`; its returned URL downloads the compatible APK.
+come from backend card blocks. App release checks use `GET /api/v3/app/latest`;
+its returned URL downloads the compatible APK.
 
 ## API Environment Per Build Type
 
@@ -25,7 +25,7 @@ SMART_WATERING_PUBLIC_API_FALLBACK_BASE_URL=http://10.0.2.3:8081/
 SMART_WATERING_GOOGLE_WEB_CLIENT_ID=
 ```
 
-Use the public API server root URL. Do not include `/api/v2` in new env files; the Retrofit service paths already include it. For compatibility with older local env values, the app strips a trailing `/api/v1` or `/api/v2` from `SMART_WATERING_PUBLIC_API_BASE_URL`.
+Use the public API server root URL. Do not include `/api/v3` in new env files; the Retrofit service paths already include it. For compatibility with older local env values, the app strips a trailing versioned `/api/vN` segment from `SMART_WATERING_PUBLIC_API_BASE_URL`.
 
 `app/.env.debug` is used by debug builds. `app/.env.release` is used by release builds. Both files are ignored by git.
 
@@ -86,7 +86,7 @@ and published codes are equal.
 
 ## Automatic Release Publishing
 
-The app checks `GET /api/v2/app/latest` on startup and offers to download a newer APK
+The app checks `GET /api/v3/app/latest` on startup and offers to download a newer APK
 when the published `version_code` is greater than the installed one.
 
 `.github/workflows/android-release.yml` runs on a self-hosted Linux x64 runner. Pushes
@@ -97,8 +97,8 @@ runner publishes directly to a host directory mounted read-only by
 
 Configure the GitHub environment named `dev` with these variables:
 
-- `PUBLIC_API_BASE_URL` — public backend root URL, without `/api/v2`;
-- `PUBLIC_API_FALLBACK_BASE_URL` — optional reserve backend root URL, without `/api/v2`;
+- `PUBLIC_API_BASE_URL` — public backend root URL, without `/api/v3`;
+- `PUBLIC_API_FALLBACK_BASE_URL` — optional reserve backend root URL, without `/api/v3`;
 - `RELEASES_DIR` — shared host directory, for example `/srv/smart-watering/releases`;
 - `SIGNING_DIR` — runner-only signing directory, for example
   `/var/lib/smart-watering-builder/signing`.

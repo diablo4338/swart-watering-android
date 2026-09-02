@@ -7,8 +7,7 @@ import retrofit2.http.POST
 import retrofit2.http.Url
 
 interface ApiService {
-    // These v2 release routes intentionally remain compatible with installed clients.
-    @GET("api/v2/app/latest")
+    @GET("api/v3/app/latest")
     suspend fun getLatestAppRelease(): AppRelease
 
     @POST("api/v3/auth/login")
