@@ -771,6 +771,14 @@ private fun HistoryBlock(
 ) {
     val items = block.data["items"].asList()
     BlockSurface(block.title) {
+        block.schema?.controls.orEmpty().forEach { control ->
+            val key = "$deviceId:${block.id}:${control.id}"
+            ActionControl(control, control.value, key in pendingActions) { value, onComplete ->
+                control.request?.let {
+                    onAction(key, it, emptyMap(), value, onComplete)
+                } ?: onComplete?.invoke(ActionSubmissionResult(false, "Action request is missing"))
+            }
+        }
         if (items.isEmpty()) Text("No watering history", color = MaterialTheme.colorScheme.onSurfaceVariant)
         items.forEach { raw ->
             val item = raw.asMap()

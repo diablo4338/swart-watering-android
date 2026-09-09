@@ -95,7 +95,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val cardErrorDismissJobs = mutableMapOf<String, Job>()
     private val blockRefreshJobs = mutableMapOf<String, Job>()
     private val blockRevisions = mutableMapOf<String, Long>()
-    private val loadedOnceBlocks = mutableSetOf<String>()
     private var activeDeviceId: String? = null
     private var openBlockId: String? = null
 
@@ -171,13 +170,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val block = card.blocks.firstOrNull { it.id == blockId } ?: return
         val href = block.refresh.href ?: return
         val key = "$deviceId:${block.id}"
-        if (block.refresh.mode == "once" && key in loadedOnceBlocks) return
         viewModelScope.launch {
             _loadingBlocks.update { it + key }
             try {
                 val response = Repository.api.getCardBlock(href)
                 replaceBlock(response)
-                if (response.block.refresh.mode == "once") loadedOnceBlocks += key
                 _cards.update { states ->
                     states[deviceId]?.let { states + (deviceId to it.copy(error = null)) }
                         ?: states
@@ -235,16 +232,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     onComplete?.invoke(ActionSubmissionResult(false))
                     return@launch
                 }
-                val previousDeviceId = activeDeviceId
                 val newDeviceId = response.card.deviceId
-                if (previousDeviceId != null && previousDeviceId != newDeviceId) {
-                    _cards.update {
-                        (it - previousDeviceId) + (newDeviceId to CardUiState(response.card))
-                    }
-                    activeDeviceId = newDeviceId
-                    _selectedDeviceId.value = newDeviceId
-                    refreshDevicesOnce()
-                } else putCard(newDeviceId, response.card)
+                // An action can finish after the user has scrolled to another device.
+                // Update the originating card without changing the current selection.
+                putCard(newDeviceId, response.card)
                 if (activeDeviceId == newDeviceId) scheduleBlockRefreshes(response.card)
                 onComplete?.invoke(ActionSubmissionResult(true))
             } catch (error: Exception) {
