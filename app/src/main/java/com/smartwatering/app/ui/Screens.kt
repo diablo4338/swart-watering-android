@@ -579,11 +579,23 @@ private fun ConsumptionAnalysisDay(day: Map<String, Any?>) {
     var expanded by rememberSaveable(date) { mutableStateOf(false) }
     val average = analysis["average_rate_g_per_hour"].asNumber()
     val endpointGrams = analysis["endpoint_consumed_rounded_g"].asNumber()
+    val agreement = analysis["agreement_percent"].asNumber()?.takeIf { it.isFinite() }
+    val agreementColor = when {
+        agreement != null && agreement >= 90 && agreement <= 105 -> Color(0xFF2E7D32)
+        agreement != null && agreement >= 0 && agreement < 90 -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val agreementLabel = when {
+        agreement != null && agreement >= 0 && agreement <= 105 -> "${formatNumber(agreement)}%"
+        else -> "ANNOR"
+    }
     OutlinedButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f)) {
             Text(date, fontWeight = FontWeight.Bold)
             Text("${average?.let { "${formatNumber(it)} g/h" } ?: "—"} (${endpointGrams?.let { "${it.toLong()} g" } ?: "—"})")
         }
+        Text(agreementLabel, color = agreementColor, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
         Icon(
             if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
             contentDescription = if (expanded) "Collapse $date" else "Expand $date",
