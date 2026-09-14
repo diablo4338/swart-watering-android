@@ -38,6 +38,13 @@ jobs:
         with:
           name: smart-watering-android
           keep-state: true
+          # GC thresholds, not a hard quota: active builds may exceed 5 GB.
+          buildkitd-config-inline: |
+            [worker.oci]
+              gc = true
+              reservedSpace = "1GB"
+              maxUsedSpace = "5GB"
+              minFreeSpace = "10GB"
 
       - name: Resolve version
         shell: bash
