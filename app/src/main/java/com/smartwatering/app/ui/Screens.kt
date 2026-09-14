@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
@@ -190,6 +192,8 @@ fun DevicesScreen(viewModel: MainViewModel, showBackendUnavailable: Boolean = fa
                             loadingBlocks = loadingBlocks,
                             onRefresh = { viewModel.refreshCard(device) },
                             onOpenBlock = { blockId -> viewModel.setOpenBlock(device.id, blockId) },
+                            isActive = device.id == selected,
+                            onLoadStatistics = { block -> viewModel.loadStatisticsBlock(device.id, block) },
                             onAction = viewModel::performAction,
                         )
                     }
@@ -227,6 +231,8 @@ private fun DeviceCardPage(
     loadingBlocks: Set<String>,
     onRefresh: () -> Unit,
     onOpenBlock: (String?) -> Unit,
+    isActive: Boolean,
+    onLoadStatistics: suspend (CardBlock) -> CardBlock,
     onAction: CardActionHandler,
 ) {
     Card(
@@ -246,8 +252,9 @@ private fun DeviceCardPage(
                 val blocks = state.card.blocks
                 val overview = blocks.firstOrNull { it.kind == "device_overview" }
                 val operationQueue = blocks.firstOrNull { it.kind == "operation_queue" }
+                val analysis = blocks.firstOrNull { it.kind == "consumption_analysis" }
                 val menuBlocks = blocks.filter { it.slot in setOf("control", "watering_parameters", "history") }
-                val inlineBlocks = blocks.filterNot { it == overview || it == operationQueue || it in menuBlocks }
+                val inlineBlocks = blocks.filterNot { it == overview || it == operationQueue || it == analysis || it in menuBlocks }
                 var openBlockId by remember(device.id) { mutableStateOf<String?>(null) }
 
                 state.error?.let { ErrorBanner(it) }
@@ -281,10 +288,81 @@ private fun DeviceCardPage(
                 operationQueue?.let { block ->
                     key(block.id) { CardBlockRenderer(device.id, block, pendingActions, onAction) }
                 }
-                overview?.let { OverviewStatistics(it) }
+                if (overview != null && analysis != null) {
+                    StatisticsSwitcher(device.id, overview, analysis, isActive, onLoadStatistics)
+                } else {
+                    overview?.let { OverviewStatistics(it) }
+                }
                 inlineBlocks.forEach { block ->
                     key(block.id) { CardBlockRenderer(device.id, block, pendingActions, onAction) }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatisticsSwitcher(
+    deviceId: String,
+    overview: CardBlock,
+    analysis: CardBlock,
+    isActive: Boolean,
+    onLoad: suspend (CardBlock) -> CardBlock,
+) {
+    var diagnostic by rememberSaveable(deviceId) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !diagnostic, onClick = { diagnostic = false }, label = { Text("short") })
+            FilterChip(selected = diagnostic, onClick = { diagnostic = true }, label = { Text("diagnostic") })
+        }
+        // Recreate content and cancel the previous request on every mode change.
+        key(deviceId, diagnostic) {
+            StatisticsContent(if (diagnostic) analysis else overview, isActive, onLoad)
+        }
+    }
+}
+
+@Composable
+private fun StatisticsContent(
+    requestedBlock: CardBlock,
+    isActive: Boolean,
+    onLoad: suspend (CardBlock) -> CardBlock,
+) {
+    var loaded by remember { mutableStateOf<CardBlock?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
+    val currentLoad by rememberUpdatedState(onLoad)
+    LaunchedEffect(requestedBlock.id, requestedBlock.refresh.href, isActive, retry) {
+        if (!isActive) return@LaunchedEffect
+        loading = true
+        error = null
+        loaded = null
+        try {
+            loaded = currentLoad(requestedBlock)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            error = "Could not load statistics"
+        } finally {
+            loading = false
+        }
+    }
+    when {
+        loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        error != null -> Column {
+            Text(requireNotNull(error), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = { retry++ }) { Text("Retry") }
+        }
+        loaded != null -> {
+            if (requestedBlock.kind == "device_overview") {
+                // The ordinary overview poll keeps the short view current.
+                OverviewStatistics(requestedBlock)
+            } else {
+                // Keep the full diagnostic response as one local snapshot.
+                ConsumptionAnalysis(requireNotNull(loaded).data)
             }
         }
     }
@@ -305,6 +383,7 @@ private fun CardBlockRenderer(
         }
         "dynamic_form" -> DynamicFormBlock(deviceId, block, pendingActions, onAction)
         "history" -> HistoryBlock(deviceId, block, pendingActions, onAction)
+        "consumption_analysis" -> ConsumptionAnalysis(block.data)
         "operation_queue" -> OperationQueueBlock(deviceId, block, pendingActions, onAction)
         "progress" -> ProgressBlock(deviceId, block, pendingActions, onAction)
         "message" -> Text(block.data["message"].asText())
@@ -471,6 +550,98 @@ private fun WaterConsumption(days: List<Any?>) {
             }
         }
     }
+}
+
+@Composable
+private fun ConsumptionAnalysis(data: Map<String, Any?>) {
+    val days = data["days"].asList()
+    if (days.isEmpty()) {
+        Text("No analysis available")
+        return
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        data["snapshot_label"].asText().takeIf { it.isNotBlank() }?.let {
+            Text("Snapshot: $it", style = MaterialTheme.typography.labelSmall)
+        }
+        val timezone = days.firstOrNull().asMap()["analysis"].asMap()["timezone"].asText()
+        Text("Days: 08:00–08:00 · $timezone", style = MaterialTheme.typography.labelSmall)
+        days.forEach { raw ->
+            val values = raw.asMap()
+            key(values["date"].asText()) { ConsumptionAnalysisDay(values) }
+        }
+    }
+}
+
+@Composable
+private fun ConsumptionAnalysisDay(day: Map<String, Any?>) {
+    val date = day["date"].asText()
+    val analysis = day["analysis"].asMap()
+    var expanded by rememberSaveable(date) { mutableStateOf(false) }
+    val average = analysis["average_rate_g_per_hour"].asNumber()
+    val endpointGrams = analysis["endpoint_consumed_rounded_g"].asNumber()
+    OutlinedButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f)) {
+            Text(date, fontWeight = FontWeight.Bold)
+            Text("${average?.let { "${formatNumber(it)} g/h" } ?: "—"} (${endpointGrams?.let { "${it.toLong()} g" } ?: "—"})")
+        }
+        Icon(
+            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            contentDescription = if (expanded) "Collapse $date" else "Expand $date",
+        )
+    }
+    if (!expanded) return
+    if (analysis.isEmpty()) {
+        Text("No analysis available")
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(analysis["period_label"].asText(), style = MaterialTheme.typography.labelMedium)
+        Text("Counted time: ${consumptionDuration(analysis["counted_seconds"])} / ${consumptionDuration(analysis["total_seconds"])}")
+        Text("Calculated consumption: ${consumptionMetric(analysis["consumed_g"], "g")}")
+        Text("Between endpoints: ${consumptionMetric(analysis["endpoint_consumed_g"], "g")}")
+        Text("Endpoint time: ${consumptionDuration(analysis["sample_span_seconds"])}")
+        Text("Endpoint average: ${consumptionMetric(analysis["endpoint_rate_g_per_hour"], "g/h")}")
+        Text("Agreement: ${consumptionMetric(analysis["agreement_percent"], "%")}", fontWeight = FontWeight.Bold)
+        Text(
+            "Endpoint average ÷ calculated average × 100%. 100% means agreement; watering and missing data can change this value. Undefined when the calculated average is zero or data is missing.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        listOf("first_sample" to "First", "last_sample" to "Last").forEach { (field, label) ->
+            val sample = analysis[field].asMap()
+            Text("$label: ${sample["label"].asText().ifBlank { "—" }} · ${consumptionMetric(sample["weight_g"], "g")}", style = MaterialTheme.typography.bodySmall)
+        }
+        Text("Smoothed readings: ${analysis["filtered_samples"].asNumber()?.toInt() ?: 0}", style = MaterialTheme.typography.bodySmall)
+        listOf("day" to "Day", "night" to "Night").forEach { (field, label) ->
+            val period = day["${field}_analysis"].asMap()
+            if (period.isNotEmpty()) {
+                Text("$label: ${consumptionMetric(period["average_rate_g_per_hour"], "g/h")} (${consumptionMetric(period["endpoint_consumed_rounded_g"], "g")}) · ${consumptionDuration(period["counted_seconds"])}", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        HorizontalDivider()
+        Text("Calculation intervals", fontWeight = FontWeight.Bold)
+        analysis["intervals"].asList().forEach { raw ->
+            val interval = raw.asMap()
+            Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                Text(interval["label"].asText(), style = MaterialTheme.typography.labelMedium)
+                Text(
+                    interval["reason_label"].asText(),
+                    color = if (interval["included"] == true) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (interval["included"] == true) {
+                    Text(consumptionMetric(interval["consumed_g"], "g"), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+private fun consumptionMetric(value: Any?, unit: String): String =
+    value.asNumber()?.let { "${formatNumber(it)} $unit" } ?: "—"
+
+private fun consumptionDuration(value: Any?): String {
+    val seconds = value.asNumber()?.let { kotlin.math.round(it).toLong() } ?: return "—"
+    return "${seconds / 3600} h ${(seconds % 3600) / 60} min"
 }
 
 @Composable

@@ -188,6 +188,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun loadStatisticsBlock(deviceId: String, block: CardBlock): CardBlock {
+        try {
+            val response = Repository.api.getCardBlock(requireNotNull(block.refresh.href))
+            require(response.deviceId == deviceId && response.block.id == block.id) {
+                "Unexpected statistics response"
+            }
+            replaceBlock(response)
+            return response.block
+        } catch (error: HttpException) {
+            if (error.code() == 401) clearActiveSession()
+            throw error
+        }
+    }
+
     private fun loadCard(device: Device, force: Boolean) {
         if (!force && _cards.value[device.id]?.isLoading == true) return
         viewModelScope.launch {
