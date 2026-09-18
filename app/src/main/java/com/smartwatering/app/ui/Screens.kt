@@ -273,6 +273,23 @@ private fun DeviceCardPage(
                             ButtonDefaults.outlinedButtonColors()
                         },
                     ) { Text(block.title ?: block.id) }
+                    block.actions.forEach { action ->
+                        key(device.id, block.id, action.id) {
+                            val actionKey = "${device.id}:${block.id}:${action.id}"
+                            ActionControl(
+                                control = action,
+                                currentValue = action.value,
+                                pending = actionKey in pendingActions,
+                                onInvoke = { value, onComplete ->
+                                    action.request?.let { request ->
+                                        onAction(actionKey, request, emptyMap(), value, onComplete)
+                                    } ?: onComplete?.invoke(
+                                        ActionSubmissionResult(false, "Action request is missing")
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
                 menuBlocks.firstOrNull { it.id == openBlockId }?.let { block ->
                     key(block.id) {
@@ -801,6 +818,7 @@ private fun ActionControl(
 ) {
     val enabled = control.enabled && !pending
     when (control.controlType) {
+        "date_time_range.v1" -> DateTimeRangeAction(control, pending, onInvoke)
         "action_toggle.v1" -> GuardedActionToggle(
             control = control,
             serverValue = currentValue as? Boolean ?: false,

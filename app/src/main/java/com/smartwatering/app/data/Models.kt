@@ -130,4 +130,8 @@ data class CardBlockResponse(
 )
 
 @JsonClass(generateAdapter = true)
-data class CardActionResponse(val accepted: Boolean, val card: DeviceCard)
+data class CardActionResponse(
+    val accepted: Boolean,
+    val card: DeviceCard,
+    val result: Map<String, Any?>? = null,
+)

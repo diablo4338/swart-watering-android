@@ -34,6 +34,7 @@ data class CardUiState(
 data class ActionSubmissionResult(
     val successful: Boolean,
     val error: String? = null,
+    val result: Map<String, Any?>? = null,
 )
 
 typealias CardActionHandler = (
@@ -251,13 +252,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Update the originating card without changing the current selection.
                 putCard(newDeviceId, response.card)
                 if (activeDeviceId == newDeviceId) scheduleBlockRefreshes(response.card)
-                onComplete?.invoke(ActionSubmissionResult(true))
+                onComplete?.invoke(ActionSubmissionResult(true, result = response.result))
             } catch (error: Exception) {
                 if (error is HttpException && error.code() == 401) clearActiveSession()
                 val protocolMessage = protocolError(error)
                 if (protocolMessage != null) showTransientError(protocolMessage)
                 else Log.d(TAG, "Action failed: $actionId", error)
-                onComplete?.invoke(ActionSubmissionResult(false, protocolMessage))
+                onComplete?.invoke(ActionSubmissionResult(false, protocolMessage ?: readableError(error)))
             } finally {
                 _pendingActions.update { it - actionId }
             }
