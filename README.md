@@ -71,7 +71,10 @@ make apk-local-build VERSION_NAME=1.2.3-test VERSION_CODE=1203
 ```
 
 The APK is written to `build/local-apk/` and published for the local API under
-`../docker/releases/`. Recreate the local `public-api` container once after
+`../docker/releases/`. For local development, set
+`SMART_WATERING_ANDROID_RELEASES_DIR` in `docker/.env` to the absolute path of
+that directory; the Compose default is `/srv/smart-watering/releases`.
+Recreate the local `public-api` container once after
 updating this configuration so that it mounts that directory:
 
 ```bash
